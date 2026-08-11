@@ -1,0 +1,23 @@
+{
+  "name": "md-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Preview a Markdown file in a browser tab, with live reload on save.",
+  "type": "module",
+  "bin": {
+    "md-viewer": "./md-viewer.js"
+  },
+  "scripts": {
+    "install-link": "./install.sh",
+    "uninstall-link": "./install.sh --uninstall"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "marked": "^16.4.1",
+    "marked-gfm-heading-id": "^4.1.2",
+    "marked-highlight": "^2.2.2"
+  }
+}
