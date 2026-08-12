@@ -83,10 +83,14 @@
     });
   }
 
-  // Let the server know the tab is going away, so it can exit promptly instead
-  // of waiting for the event stream to time out. A reload or an in-app
-  // navigation also triggers this, hence the grace period on the server side.
-  window.addEventListener('pagehide', function () {
+  // Let the server know the document is going away, so that closing the tab
+  // returns the shell prompt at once instead of waiting out a timeout. A reload
+  // or a navigation sends this too, which the server sorts out for itself.
+  window.addEventListener('pagehide', function (event) {
+    // Entering the back/forward cache is not going away: this same document
+    // comes back, event stream and all, with no request in between for the
+    // server to notice.
+    if (event.persisted) return;
     navigator.sendBeacon('/api/bye', '');
   });
 

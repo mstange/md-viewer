@@ -19,8 +19,25 @@ import { renderMarkdown } from './lib/render.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(path.join(HERE, 'package.json'), 'utf8')).version;
 
-/** How long to wait for a tab to come back (reload, navigation) before exiting. */
-const EXIT_GRACE_MS = 3000;
+// How long to wait for a tab before exiting, once none is connected. No browser
+// event says "this tab is closing" — the page sends the same goodbye on a close,
+// a reload, a navigation and a browser shutdown — so which delay applies is
+// decided from what the server itself saw, in scheduleExit() below.
+
+/** The page said goodbye and no document is loading: it is really gone. Just
+ *  long enough to cover a navigation request landing in the same loop turn. */
+const CLOSE_GRACE_MS = 150;
+/** A page is being served, so a document is on its way in: wait for its stream. */
+const RELOAD_GRACE_MS = 20000;
+/** The stream died with no goodbye, which a tab cannot report: a suspend, a VPN
+ *  reconnect, a frozen content process. The tab usually outlives those. */
+const OFFLINE_GRACE_MS = 60000;
+/** A page served this recently still counts as a document on its way in. */
+const PAGE_WINDOW_MS = 1000;
+
+const debug = process.env.MD_VIEWER_DEBUG
+  ? (message) => console.log(`md-viewer: [${new Date().toISOString().slice(11, 23)}] ${message}`)
+  : () => {};
 
 const USAGE = `md-viewer ${VERSION} — preview a Markdown file in your browser
 
@@ -254,10 +271,15 @@ function serve(initialFile, options) {
   const watchers = new Map();
   let exitTimer = null;
   let seenClient = false;
+  /** Set when a page reports its own unload, cleared once a tab is back. */
+  let saidGoodbye = false;
+  let pagesInFlight = 0;
+  let lastPageAt = 0;
 
   function subscribe(client) {
     clients.add(client);
     seenClient = true;
+    saidGoodbye = false;
     clearTimeout(exitTimer);
     exitTimer = null;
 
@@ -281,7 +303,7 @@ function serve(initialFile, options) {
       watcher.stop();
       watchers.delete(client.file);
     }
-    scheduleExit();
+    scheduleExit('event stream closed');
   }
 
   function notify(file) {
@@ -293,17 +315,52 @@ function serve(initialFile, options) {
     }
   }
 
-  /** Exit once every tab is gone, allowing time for a reload to reconnect. */
-  function scheduleExit() {
-    if (!seenClient || clients.size > 0 || exitTimer) {
+  /**
+   * A document is being loaded. Reloads and navigations commit the new response
+   * before unloading the old document, so this always runs *before* the goodbye
+   * and the stream close that follow — which is what lets scheduleExit() tell
+   * them from a tab that is gone for good.
+   */
+  function notePageRequest(req) {
+    pagesInFlight++;
+    lastPageAt = Date.now();
+    debug(`serving a page (${pagesInFlight} in flight)`);
+    req.on('close', () => {
+      pagesInFlight--;
+      lastPageAt = Date.now();
+    });
+    scheduleExit('page request');
+  }
+
+  /**
+   * Decide when to exit now that no tab is connected. Recomputed from scratch on
+   * every signal, so it does not matter which order they arrive in.
+   */
+  function scheduleExit(signal) {
+    clearTimeout(exitTimer);
+    exitTimer = null;
+    if (!seenClient || clients.size > 0) {
       return;
     }
+
+    let delay;
+    let reason;
+    if (pagesInFlight > 0 || Date.now() - lastPageAt < PAGE_WINDOW_MS) {
+      delay = RELOAD_GRACE_MS;
+      reason = 'page load never connected';
+    } else if (saidGoodbye) {
+      delay = CLOSE_GRACE_MS;
+      reason = 'browser tab closed';
+    } else {
+      delay = OFFLINE_GRACE_MS;
+      reason = 'event stream lost';
+    }
+
+    debug(`${signal}: exiting in ${delay}ms unless a tab connects (${reason})`);
     exitTimer = setTimeout(() => {
-      if (clients.size === 0) {
-        console.log('md-viewer: browser tab closed, exiting.');
-        process.exit(0);
-      }
-    }, EXIT_GRACE_MS);
+      console.log(`md-viewer: ${reason}, exiting.`);
+      process.exit(0);
+    }, delay);
     exitTimer.unref?.();
   }
 
@@ -326,6 +383,10 @@ function serve(initialFile, options) {
   }
 
   async function handle(req, res, url) {
+    if (url.pathname === '/') {
+      notePageRequest(req);
+    }
+
     // The token in the URL is exchanged for a cookie on the first load, so that
     // other pages the browser happens to be showing cannot read local files
     // through this server.
@@ -363,8 +424,10 @@ function serve(initialFile, options) {
         return;
       case '/api/bye':
         send(res, 204, MIME['.txt'], '');
-        // The tab may just be reloading; scheduleExit() waits it out.
-        scheduleExit();
+        // The document is gone for certain, but it may be a reload or a
+        // navigation replacing it; scheduleExit() sorts out which.
+        saidGoodbye = true;
+        scheduleExit('page said goodbye');
         return;
       case '/_file':
         await handleRawFile(res, url);

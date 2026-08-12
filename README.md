@@ -44,6 +44,7 @@ Environment variables:
 | `MD_VIEWER_PORT`     | Default port.                                 |
 | `MD_VIEWER_BINDIR`   | Install directory used by `install.sh`.       |
 | `BROWSER`            | Command used to open the URL.                 |
+| `MD_VIEWER_DEBUG`    | Log why and when the server decides to exit.  |
 
 ## What it renders
 
@@ -53,15 +54,33 @@ blocks get a copy button, and the page follows your system light/dark setting.
 
 Relative links work: images and other assets are served from disk, and a link
 to another `.md` file opens that file in the same tab, watched like the first
-one.
+one. Links to other sites open in a new tab, so following one never unloads the
+preview.
 
 ## How it works
 
 A server on a random localhost port renders the file and holds a
 `Server-Sent Events` connection to the tab. A change to the file pushes a
-`change` event; the tab fetches the new HTML and swaps it in. When the last
-event stream disconnects and none reconnects within three seconds, the process
-exits — that covers closing the tab while surviving reloads and navigation.
+`change` event; the tab fetches the new HTML and swaps it in.
+
+Exiting when the tab goes away is guesswork, because no browser event
+distinguishes a close from a reload: the page reports the same `pagehide` for a
+close, a reload, an in-tab navigation, a browser shutdown, and a tab Firefox
+discards under memory pressure. What does distinguish them is the order requests
+arrive in — a reload or a navigation commits its new response *before* the old
+document unloads, so the page request is already served by the time the goodbye
+lands. So once no event stream is left:
+
+| What the server saw                     | It waits |
+| --------------------------------------- | -------- |
+| A goodbye, no page being served         | 150ms    |
+| A page being served, or just served     | 20s      |
+| A stream that died without a goodbye    | 60s      |
+
+Closing the tab therefore returns the prompt right away, a slow reload is not a
+race, and a dropped connection — a suspend, a VPN reconnect, a frozen content
+process — no longer kills a viewer whose tab is still open. Set
+`MD_VIEWER_DEBUG=1` to watch those decisions.
 
 The page URL carries a one-time token that is exchanged for a `SameSite=Lax`
 cookie, so other pages in the browser cannot use the server to read local
