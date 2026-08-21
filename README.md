@@ -57,6 +57,33 @@ to another `.md` file opens that file in the same tab, watched like the first
 one. Links to other sites open in a new tab, so following one never unloads the
 preview.
 
+## Review comments
+
+Select text in the preview and a box opens to comment on it. `Enter` saves,
+`Shift+Enter` adds a newline, `Escape` cancels. Saved passages are highlighted;
+click one to edit its comment, or empty it and press `Enter` to delete it.
+
+A pill in the corner counts the comments and copies the lot out as a prompt:
+
+```
+Please address these review comments on /tmp/notes.md:
+
+- notes.md:12 — "the first paragraph"
+  this wording is vague
+
+- notes.md:31 — "42"
+  why this value?
+```
+
+The line numbers come from the renderer, which records the source line of every
+block it emits, so an agent can go straight to the passage.
+
+Comments live in the page and nothing is written to disk. Saving the file keeps
+them: each one remembers the text it refers to along with the text either side,
+so it re-attaches after the reload as long as that passage is still there. A
+comment whose text you deleted stays in the list, with nothing left to point at.
+Reloading the tab yourself starts over, so copy the prompt out before you do.
+
 ## How it works
 
 A server on a random localhost port renders the file and holds a

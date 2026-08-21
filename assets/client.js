@@ -59,6 +59,9 @@
         article.innerHTML = data.html;
         document.title = data.title;
         addCopyButtons();
+        // The re-render dropped every highlight; review mode puts back the ones
+        // whose text is still in the file.
+        if (window.mdvReviewReattach) window.mdvReviewReattach();
         flash();
       })
       .catch(function () {

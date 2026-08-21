@@ -170,6 +170,16 @@ ${tail}
 `;
 }
 
+/** Chrome added to the served page, but not to a standalone `-n` render. */
+const STATUS_PILL = '<div id="mdv-status" class="mdv-status"></div>\n';
+const REVIEW_BAR =
+  '<div id="mdv-review" class="mdv-review-bar" hidden>' +
+  '<span class="mdv-review-count"></span>' +
+  '<button type="button" class="mdv-review-copy">Copy review</button>' +
+  '</div>\n';
+const SCRIPTS =
+  '<script src="/_assets/review.js"></script>\n<script src="/_assets/client.js"></script>';
+
 // ---------------------------------------------------------------------------
 // One-shot mode: standalone HTML file, no server
 // ---------------------------------------------------------------------------
@@ -261,6 +271,10 @@ function serve(initialFile, options) {
     },
     '/_assets/client.js': {
       body: fs.readFileSync(path.join(HERE, 'assets/client.js')),
+      type: MIME['.js'],
+    },
+    '/_assets/review.js': {
+      body: fs.readFileSync(path.join(HERE, 'assets/review.js')),
       type: MIME['.js'],
     },
   };
@@ -471,7 +485,7 @@ function serve(initialFile, options) {
         file,
         body: rendered.html,
         head: '<link rel="stylesheet" href="/_assets/style.css">',
-        tail: '<div id="mdv-status" class="mdv-status"></div>\n<script src="/_assets/client.js"></script>',
+        tail: REVIEW_BAR + STATUS_PILL + SCRIPTS,
       }),
     );
   }
