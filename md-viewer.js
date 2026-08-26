@@ -146,7 +146,39 @@ const escapeHtml = (text) =>
 async function renderFile(file, linkMode) {
   const source = await fsp.readFile(file, 'utf8');
   const { html, title } = renderMarkdown(source, { baseDir: path.dirname(file), linkMode });
-  return { html, title: title || path.basename(file) };
+  return { html, title: tabTitle(title, file) };
+}
+
+/**
+ * The tab title: what the document calls itself, then the file it came from, so
+ * that a strip of tabs full of SKILL.md and README.md can still be told apart.
+ * Tabs truncate, which is why the document's own title leads.
+ */
+function tabTitle(title, file) {
+  const base = path.basename(file);
+  return !title || title === base ? base : `${title} — ${base}`;
+}
+
+/**
+ * The file's path, shortened for display: a home-relative path beats an absolute
+ * one at the top of a document, and the basename is the part worth reading, so
+ * it stays unmuted. Many files worth previewing are named SKILL.md or README.md,
+ * which is why the directory is shown at all.
+ */
+function pathHeader(file) {
+  const home = os.homedir();
+  const inHome = file === home || file.startsWith(home + path.sep);
+  const shown = inHome ? '~' + file.slice(home.length) : file;
+  const dir = shown.slice(0, shown.length - path.basename(shown).length);
+  return (
+    '<div class="mdv-path" title="' +
+    escapeHtml(file) +
+    '"><span class="mdv-path-dir">' +
+    escapeHtml(dir) +
+    '</span>' +
+    escapeHtml(path.basename(shown)) +
+    '</div>\n'
+  );
 }
 
 function page({ title, body, file, head = '', tail = '' }) {
@@ -160,7 +192,7 @@ ${head}
 </head>
 <body>
 <div id="mdv-root" data-file="${escapeHtml(file)}">
-<article id="mdv-content">
+${pathHeader(file)}<article id="mdv-content">
 ${body}
 </article>
 </div>
@@ -406,6 +438,12 @@ function serve(initialFile, options) {
     // through this server.
     if (url.pathname === '/' && authorized(url.searchParams.get('t'))) {
       url.searchParams.delete('t');
+      // Name the file in the URL as well, so the address bar says which document
+      // this is from the first load on. Without it the opening page is a bare
+      // host and port, and only pages reached by following a link say anything.
+      if (!url.searchParams.has('f')) {
+        url.searchParams.set('f', initialFile);
+      }
       res.writeHead(302, {
         'set-cookie': `mdv_token=${token}; Path=/; SameSite=Lax; HttpOnly`,
         location: url.pathname + url.search,

@@ -75,7 +75,10 @@ body {
   line-height: 1.25;
 }
 
-#mdv-content > :first-child {
+/* The second selector: the frontmatter header is chrome, not content, so the
+   document's first real block still sits at the top of the page. */
+#mdv-content > :first-child,
+#mdv-content > .mdv-frontmatter + * {
   margin-top: 0;
 }
 
@@ -106,6 +109,72 @@ body {
 #mdv-content h6 {
   font-size: 0.85em;
   color: var(--fg-muted);
+}
+
+/* Path header */
+
+/* Which file this is. Quiet enough to stay out of the way of the document, and
+   set in the mono family because it is a path. */
+.mdv-path {
+  margin-bottom: 1.5rem;
+  font: 0.8rem var(--mono);
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The basename is the part being read; the directory only disambiguates it. */
+.mdv-path-dir {
+  opacity: 0.7;
+}
+
+/* Frontmatter */
+
+/* Metadata, so it reads quieter than the prose and sits apart from it: a keyed
+   header rather than a table, since one long `description` and a one-word
+   `name` do not want a shared column width. */
+#mdv-content .mdv-frontmatter {
+  margin: 0 0 1.75rem;
+  padding: 0.85rem 1.1rem;
+  font-size: 0.9em;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+#mdv-content .mdv-fm-row {
+  display: flex;
+  gap: 0.85em;
+  padding: 0.3em 0;
+}
+
+#mdv-content .mdv-fm-row + .mdv-fm-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+#mdv-content .mdv-frontmatter dt {
+  flex: none;
+  width: 8.5em;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  line-height: 1.75;
+  color: var(--fg-muted);
+}
+
+#mdv-content .mdv-frontmatter dd {
+  margin: 0;
+  min-width: 0;
+}
+
+/* Narrow enough that an 8.5em label column starves the value. */
+@media (max-width: 32rem) {
+  #mdv-content .mdv-fm-row {
+    display: block;
+  }
+
+  #mdv-content .mdv-frontmatter dt {
+    width: auto;
+    line-height: 1.4;
+  }
 }
 
 /* Blocks */
