@@ -124,12 +124,16 @@ Two things a plain `git diff` leaves you to work out for yourself:
 - **A line changed only by whitespace says so.** The changed runs spell their
   spaces and tabs out as `·` and `→`, and the line is tagged `whitespace`, so a
   reindent is never mistaken for a real edit.
-- **One word changing in a sentence highlights that word.** Only lines that
-  are versions of each other are compared this way, and a run that swaps two
-  lines for thirteen is not that: reflowed prose moves text between lines until
-  no pairing beats a coin toss, so those are shown as lines gone and lines
-  arrived. A line with no counterpart is coloured across its whole row rather
-  than having its text highlighted, since what changed is the line.
+- **One word changing in a sentence highlights that word.** Lines are matched
+  to the line they became by how much text they share, not by their position in
+  the hunk, so an edit is still found when ten lines were inserted above it. A
+  line broken in two is matched to both halves, and the words it kept are
+  marked on each. Where two candidates are equally good and hold the same text,
+  neither is the answer and the line is left unmarked — a paragraph reflowed
+  has no one line that became another.
+- **A line with no counterpart is coloured across its whole row**, rather than
+  having its text highlighted: what changed there is the line, and a mark that
+  hugs the words reads as a highlighter drawn over them.
 
 A checkbox switches between unified and side-by-side. The starting choice comes
 from the window width — side by side above 1400px — and then stays put, so a
