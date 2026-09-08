@@ -33,9 +33,22 @@
   // Text walking
   // ---------------------------------------------------------------------------
 
-  /** Call fn for each text node under root, stopping at the first truthy result. */
+  /**
+   * Call fn for each text node under root, stopping at the first truthy result.
+   *
+   * Text inside a `.mdv-mirror` is skipped. A diff shown side by side repeats
+   * each unchanged line in both columns, and the second copy is only there to
+   * be looked at: counting it would put every anchor past it at the wrong
+   * offset, and let a search land on a line the reader never selected.
+   */
   function walkText(root, fn) {
-    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        return node.parentElement && node.parentElement.closest('.mdv-mirror')
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_ACCEPT;
+      },
+    });
     var node;
     while ((node = walker.nextNode())) {
       var result = fn(node);
@@ -44,7 +57,17 @@
     return null;
   }
 
-  /** Character offset of a (node, offset) position within article.textContent. */
+  /** The article's text, as walkText sees it: mirrored copies left out. */
+  function articleText() {
+    var text = '';
+    walkText(article, function (node) {
+      text += node.textContent;
+      return false;
+    });
+    return text;
+  }
+
+  /** Character offset of a (node, offset) position within articleText(). */
   function offsetOf(container, containerOffset) {
     var total = 0;
     var found = -1;
@@ -64,7 +87,7 @@
   // ---------------------------------------------------------------------------
 
   function createAnchor(range) {
-    var full = article.textContent;
+    var full = articleText();
     var exact = range.toString();
     var start = offsetOf(range.startContainer, range.startOffset);
     if (start === -1) start = full.indexOf(exact);
@@ -84,7 +107,7 @@
    * selected text alone once an edit has disturbed the surroundings.
    */
   function findAnchor(anchor) {
-    var full = article.textContent;
+    var full = articleText();
     var start = -1;
 
     var at = full.indexOf(anchor.prefix + anchor.exact + anchor.suffix);
