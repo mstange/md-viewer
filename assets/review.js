@@ -141,6 +141,16 @@
     return block ? Number(block.dataset.line) : null;
   }
 
+  /**
+   * Where a comment points, beyond its line. A markdown document is one file,
+   * so there is nothing more to say; a diff spans several, and sets this hook
+   * to name the file and quote the surrounding lines.
+   * @returns {object|null} extra fields merged into the comment
+   */
+  function placeOf(node) {
+    return window.mdvReviewPlace ? window.mdvReviewPlace(node) : null;
+  }
+
   // ---------------------------------------------------------------------------
   // Highlights
   // ---------------------------------------------------------------------------
@@ -315,6 +325,7 @@
       anchor: pending.anchor,
       quote: pending.quote,
       line: pending.line,
+      place: pending.place,
     });
 
     // The provisional highlight becomes this comment's own.
@@ -405,6 +416,7 @@
       anchor: createAnchor(range),
       quote: text,
       line: lineOf(range.startContainer),
+      place: placeOf(range.startContainer),
     };
 
     var marks = highlight(range, null);
@@ -422,6 +434,10 @@
   // ---------------------------------------------------------------------------
 
   function prompt(file) {
+    // A diff spans many files and has no single subject, so it writes its own
+    // preamble and entries; a markdown document keeps the wording below.
+    if (window.mdvReviewPrompt) return window.mdvReviewPrompt(comments);
+
     var name = file.split('/').pop();
     var lines = ['Please address these review comments on ' + file + ':', ''];
     for (var i = 0; i < comments.length; i++) {

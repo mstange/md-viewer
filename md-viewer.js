@@ -15,6 +15,8 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { renderMarkdown } from './lib/render.js';
+import { openBrowser } from './lib/browser.js';
+import { looksLikeDiff } from './lib/diff.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(path.join(HERE, 'package.json'), 'utf8')).version;
@@ -609,32 +611,6 @@ function serve(initialFile, options) {
 }
 
 // ---------------------------------------------------------------------------
-// Browser
-// ---------------------------------------------------------------------------
-
-function openBrowser(url) {
-  let command;
-  let args;
-  if (process.env.BROWSER) {
-    [command, ...args] = process.env.BROWSER.split(' ');
-    args.push(url);
-  } else if (process.platform === 'darwin') {
-    command = 'open';
-    args = [url];
-  } else if (process.platform === 'win32') {
-    command = 'cmd';
-    args = ['/c', 'start', '""', url.replace(/&/g, '^&')];
-  } else {
-    command = 'xdg-open';
-    args = [url];
-  }
-
-  const child = spawn(command, args, { stdio: 'ignore', detached: true });
-  child.on('error', () => console.error(`md-viewer: could not run ${command}, open the URL above.`));
-  child.unref();
-}
-
-// ---------------------------------------------------------------------------
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
@@ -648,6 +624,17 @@ async function main() {
   }
   if (stats.isDirectory()) {
     fail(`${options.file} is a directory`);
+  }
+
+  // A patch handed to md-viewer is nobody's idea of markdown: lexed as one it
+  // becomes a wall of paragraphs. Hand it to the diff viewer instead, which is
+  // what the user meant, and say so rather than silently changing tools.
+  if (looksLikeDiff(await fsp.readFile(file, 'utf8'))) {
+    console.log('md-viewer: this looks like a diff, opening it with diff-viewer.');
+    const viewer = path.join(HERE, 'diff-viewer.js');
+    const child = spawn(process.execPath, [viewer, file], { stdio: 'inherit' });
+    child.on('exit', (code) => process.exit(code ?? 0));
+    return;
   }
 
   if (options.watch) {

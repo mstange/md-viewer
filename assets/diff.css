@@ -1,0 +1,319 @@
+/* diff-viewer — the diff table, in two layouts driven by a class on the root.
+   Colours and the light/dark switch come from style.css, which is served
+   alongside this file. */
+
+:root {
+  --dv-add-bg: #e6ffec;
+  --dv-add-bg-strong: #abf2bc;
+  --dv-del-bg: #ffebe9;
+  --dv-del-bg-strong: #ffc1bf;
+  --dv-space: #8250df;
+  --dv-space-bg: #f3eafd;
+  --dv-hunk-fg: #59636e;
+  --dv-hunk-bg: #f0f3f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --dv-add-bg: #12261e;
+    --dv-add-bg-strong: #1f6c33;
+    --dv-del-bg: #25171c;
+    --dv-del-bg-strong: #8b2c31;
+    --dv-space: #d2a8ff;
+    --dv-space-bg: #2b1f3d;
+    --dv-hunk-fg: #9198a1;
+    --dv-hunk-bg: #161b22;
+  }
+}
+
+/* A diff is wide by nature, so it gets the window rather than a prose column. */
+#mdv-root.dv-root {
+  max-width: none;
+  padding: 1.5rem 1.25rem 6rem;
+}
+
+/* Toolbar */
+
+.dv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.dv-summary {
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}
+
+.dv-summary .dv-stat {
+  margin-left: 0.5rem;
+}
+
+.dv-layout-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  user-select: none;
+  cursor: pointer;
+}
+
+/* Files */
+
+.dv-file {
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.dv-file-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.dv-file-name {
+  font-family: var(--mono);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.dv-file-status {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.dv-status-added {
+  color: var(--accent);
+  border-color: currentColor;
+}
+
+.dv-status-deleted {
+  color: var(--danger);
+  border-color: currentColor;
+}
+
+.dv-stat {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.dv-stat-add {
+  color: var(--accent);
+}
+
+.dv-stat-del {
+  color: var(--danger);
+}
+
+.dv-file-empty,
+.dv-empty-diff {
+  padding: 0.75rem;
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+}
+
+/* Lines */
+
+.dv-table {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.dv-line {
+  display: grid;
+  align-items: start;
+}
+
+.dv-num {
+  padding: 0 0.6em;
+  text-align: right;
+  color: var(--fg-muted);
+  background: var(--bg-subtle);
+  border-right: 1px solid var(--border-subtle);
+  user-select: none;
+  font-size: 0.75rem;
+  /* The gutter runs the height of a wrapped line, not just its first row. */
+  align-self: stretch;
+}
+
+.dv-marker {
+  padding-left: 0.45em;
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+.dv-text {
+  padding-right: 0.5em;
+  /* Long lines wrap rather than scroll the page sideways: a review comment on
+     a line you cannot see is not worth the horizontal scrollbar. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dv-line-add {
+  background: var(--dv-add-bg);
+}
+
+.dv-line-del {
+  background: var(--dv-del-bg);
+}
+
+/* The word that actually changed. */
+.dv-word {
+  background: var(--dv-add-bg-strong);
+  border-radius: 2px;
+}
+
+.dv-line-del .dv-word {
+  background: var(--dv-del-bg-strong);
+}
+
+/* Whitespace-only changes: the point of the line is what you cannot see, so
+   the changed runs spell their spaces out and the row says why it is here. */
+.dv-row-space .dv-word {
+  background: var(--dv-space-bg);
+  outline: 1px solid var(--dv-space);
+  color: var(--dv-space);
+}
+
+.dv-row-space .dv-text::after {
+  content: "whitespace";
+  float: right;
+  margin-left: 1em;
+  color: var(--dv-space);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.85;
+}
+
+.dv-row-hunk {
+  padding: 0.15rem 0.5rem;
+  color: var(--dv-hunk-fg);
+  background: var(--dv-hunk-bg);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+/* ---------------------------------------------------------------------------
+   The two layouts.
+
+   Both are grid placements of the same elements. Nothing is duplicated and
+   nothing is re-rendered when the toggle flips, so a review comment stays
+   attached to the line it was written against.
+   --------------------------------------------------------------------------- */
+
+/* Unified: every line in one column, behind both gutters. */
+
+.dv-unified .dv-line {
+  grid-template-columns: 3.4em 3.4em 1.4em 1fr;
+}
+
+/* Side by side: deletions left, insertions right, each pair on one line. */
+
+.dv-split .dv-row-change {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.dv-split .dv-line {
+  grid-template-columns: 3.4em 1.4em 1fr;
+}
+
+/* A changed line shows only the gutter of the file it belongs to. Hiding the
+   other one also takes it out of the grid, so the three that remain fall into
+   the three columns in markup order. */
+.dv-split .dv-line-del .dv-num-new,
+.dv-split .dv-line-add .dv-num-old {
+  display: none;
+}
+
+.dv-split .dv-line-add {
+  border-left: 1px solid var(--border);
+}
+
+/* A line with no counterpart still leaves its half of the row, so the two
+   sides do not slide out of step. */
+.dv-split .dv-row-del .dv-line-del {
+  grid-column: 1;
+}
+
+.dv-split .dv-row-add .dv-line-add {
+  grid-column: 2;
+  border-left: 1px solid var(--border);
+}
+
+.dv-split .dv-row-del::after,
+.dv-split .dv-row-add::before {
+  content: "";
+  background: var(--bg-subtle);
+  opacity: 0.5;
+}
+
+.dv-split .dv-row-add::before {
+  grid-column: 1;
+}
+
+/* A context line spans both columns: it is the same text on either side, and
+   writing it into the page twice would make every review anchor match twice
+   and double the quote that gets copied out. Its gutters bracket the row, so
+   each side still has its own line number to read against. */
+.dv-split .dv-row-context {
+  grid-template-columns: 1fr;
+}
+
+.dv-split .dv-line-ctx {
+  grid-template-columns: 3.4em 1.4em 1fr 3.4em;
+}
+
+/* Placed explicitly: the new-file number comes second in the markup, but
+   belongs at the far end of the row. */
+.dv-split .dv-line-ctx .dv-num-old {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.dv-split .dv-line-ctx .dv-marker {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.dv-split .dv-line-ctx .dv-text {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.dv-split .dv-line-ctx .dv-num-new {
+  grid-column: 4;
+  grid-row: 1;
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+
+/* Review marks sit inside the code cells, so they inherit the mono font. */
+#mdv-content mark.mdv-mark {
+  padding: 0;
+}
