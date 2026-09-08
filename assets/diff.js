@@ -18,16 +18,42 @@
   // Layout
   // ---------------------------------------------------------------------------
 
+  /** Whether the reader has picked a layout, which then outranks any guess. */
+  var chosen = false;
+
   function apply(split) {
     root.classList.toggle('dv-split', split);
     root.classList.toggle('dv-unified', !split);
+    toggle.checked = split;
   }
 
-  // Guessed once from the window, then left alone: a resize while you are part
-  // way through a review should not reflow the page under the comment box.
-  apply(window.innerWidth >= SPLIT_MIN_WIDTH);
-  toggle.checked = root.classList.contains('dv-split');
+  function wideEnough() {
+    return document.documentElement.clientWidth >= SPLIT_MIN_WIDTH;
+  }
+
+  function guess() {
+    if (!chosen) {
+      apply(wideEnough());
+    }
+  }
+
+  // The width this reads is not final yet. A page zoom is applied while the
+  // document loads, so a script running at the end of the body can see the
+  // unzoomed width and a moment later the zoomed one — and at 90% zoom a window
+  // that is too narrow for two columns becomes wide enough. Guessing once, from
+  // whichever value happened to be current, is why two tabs of the same size
+  // could disagree. So the guess is repeated as the width settles, and stops
+  // the moment the reader picks for themselves.
+  guess();
+  window.addEventListener('DOMContentLoaded', guess);
+  window.addEventListener('load', guess);
+  window.addEventListener('resize', guess);
+
   toggle.addEventListener('change', function () {
+    // From here on the layout is the reader's, and no width changes it back —
+    // reflowing the page under someone part way through a review is worse than
+    // showing them a layout they can undo.
+    chosen = true;
     apply(toggle.checked);
   });
 
