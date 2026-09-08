@@ -631,8 +631,13 @@ async function main() {
   // what the user meant, and say so rather than silently changing tools.
   if (looksLikeDiff(await fsp.readFile(file, 'utf8'))) {
     console.log('md-viewer: this looks like a diff, opening it with diff-viewer.');
-    const viewer = path.join(HERE, 'diff-viewer.js');
-    const child = spawn(process.execPath, [viewer, file], { stdio: 'inherit' });
+    // The options the two viewers share are passed on. Anything asked for on
+    // this command line was asked for about the file, not about which program
+    // ends up showing it.
+    const args = [path.join(HERE, 'diff-viewer.js'), file];
+    if (!options.open) args.push('--no-open');
+    if (options.port) args.push('--port', String(options.port));
+    const child = spawn(process.execPath, args, { stdio: 'inherit' });
     child.on('exit', (code) => process.exit(code ?? 0));
     return;
   }

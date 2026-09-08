@@ -36,15 +36,17 @@
   /**
    * Call fn for each text node under root, stopping at the first truthy result.
    *
-   * Text inside a `.mdv-mirror` is skipped. A diff shown side by side repeats
-   * each unchanged line in both columns, and the second copy is only there to
-   * be looked at: counting it would put every anchor past it at the wrong
-   * offset, and let a search land on a line the reader never selected.
+   * Text marked `.mdv-aside` is skipped: it is on the page to be looked at, not
+   * to be read as part of the document. A diff uses it for the line numbers and
+   * the +/- markers in the gutters, and for the second copy of an unchanged line
+   * that side by side draws in the other column. Counting any of it would put
+   * every anchor past it at the wrong offset, and paste a column of line numbers
+   * into the middle of a quoted passage.
    */
   function walkText(root, fn) {
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode: function (node) {
-        return node.parentElement && node.parentElement.closest('.mdv-mirror')
+        return node.parentElement && node.parentElement.closest('.mdv-aside')
           ? NodeFilter.FILTER_REJECT
           : NodeFilter.FILTER_ACCEPT;
       },
@@ -57,7 +59,7 @@
     return null;
   }
 
-  /** The article's text, as walkText sees it: mirrored copies left out. */
+  /** The article's text, as walkText sees it: gutters and mirrors left out. */
   function articleText() {
     var text = '';
     walkText(article, function (node) {
@@ -65,6 +67,35 @@
       return false;
     });
     return text;
+  }
+
+  /**
+   * The text a range covers, as walkText sees it. `range.toString()` walks the
+   * real DOM, so a selection spanning more than one line also picks up the line
+   * numbers between them, and on a diff shown side by side the mirrored copy of
+   * every unchanged line it crossed. What the reader means by their selection is
+   * the text they can read, once, which is what this returns.
+   */
+  function rangeText(range) {
+    var text = '';
+    walkText(walkRoot(range), function (node) {
+      if (!range.intersectsNode(node)) return false;
+      var from = node === range.startContainer ? range.startOffset : 0;
+      var to = node === range.endContainer ? range.endOffset : node.textContent.length;
+      text += node.textContent.slice(from, to);
+      return false;
+    });
+    return text;
+  }
+
+  /**
+   * An element to walk a range from. A TreeWalker never visits its own root, so
+   * a range that sits inside one text node — the usual case for a selection
+   * within a paragraph — has to be walked from that node's parent.
+   */
+  function walkRoot(range) {
+    var root = range.commonAncestorContainer;
+    return root.nodeType === Node.TEXT_NODE ? root.parentNode : root;
   }
 
   /** Character offset of a (node, offset) position within articleText(). */
@@ -88,7 +119,7 @@
 
   function createAnchor(range) {
     var full = articleText();
-    var exact = range.toString();
+    var exact = rangeText(range);
     var start = offsetOf(range.startContainer, range.startOffset);
     if (start === -1) start = full.indexOf(exact);
     var end = start + exact.length;
@@ -205,7 +236,7 @@
   /** Wrap each text node the range touches, one mark per node. */
   function wrapAcrossNodes(range, id) {
     var nodes = [];
-    walkText(range.commonAncestorContainer, function (node) {
+    walkText(walkRoot(range), function (node) {
       if (range.intersectsNode(node)) nodes.push(node);
       return false;
     });
@@ -414,11 +445,13 @@
   function handleSelection() {
     var selection = window.getSelection();
     if (!selection.rangeCount) return;
-    var text = selection.toString().trim();
-    if (!text) return;
+    if (!selection.toString().trim()) return;
 
     var range = selection.getRangeAt(0);
     if (!article.contains(range.commonAncestorContainer)) return;
+    // Not selection.toString(): see rangeText().
+    var text = rangeText(range).trim();
+    if (!text) return;
 
     // Selecting inside an existing comment's highlight means editing it, and
     // selecting inside the box itself is just ordinary text selection.
@@ -434,6 +467,8 @@
     selection = window.getSelection();
     if (!selection.rangeCount || !selection.toString().trim()) return;
     range = selection.getRangeAt(0);
+    text = rangeText(range).trim();
+    if (!text) return;
 
     pending = {
       anchor: createAnchor(range),

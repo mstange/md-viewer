@@ -165,10 +165,11 @@ moved. A comment on a deleted line says so, since its number belongs to the
 original file rather than the new one.
 
 Unlike `md-viewer` there is nothing to watch — a diff piped in has no file
-behind it and cannot change. So the page is served once with its stylesheet and
-scripts inlined, and the command exits as soon as the browser has taken it. The
-tab keeps working on its own: comments were always page-local, and copying them
-out needs nothing from the process that served them.
+behind it and cannot change. So the page is self-contained, with its stylesheet
+and scripts inlined, and the command exits a few seconds after the browser stops
+asking for it. Reloading the tab keeps it alive that bit longer; once it has
+gone, the tab still works, since comments were always page-local and copying
+them out needs nothing from the process that served them.
 
 ## How md-viewer works
 

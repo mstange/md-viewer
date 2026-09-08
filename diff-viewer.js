@@ -8,10 +8,10 @@
  *   git diff | diff-viewer
  *
  * Unlike md-viewer there is nothing to watch: a diff on stdin has no file
- * behind it and cannot change. So the page is served once with its stylesheet
- * and scripts inlined, and the program exits as soon as the browser has taken
- * it. The tab keeps working on its own — review comments were always page-local
- * and the copy button needs nothing from this process.
+ * behind it and cannot change. So the page is self-contained — stylesheet and
+ * scripts inlined — and the program leaves shortly after the browser stops
+ * asking for it. The tab keeps working on its own: review comments were always
+ * page-local, and the copy button needs nothing from this process.
  */
 
 import fs from 'node:fs';
@@ -33,6 +33,12 @@ const VERSION = JSON.parse(fs.readFileSync(path.join(HERE, 'package.json'), 'utf
  * shows up at all.
  */
 const PICKUP_TIMEOUT_MS = 60000;
+/**
+ * How long to keep serving after the last request. Covers a reload, and the
+ * second connection a browser opens and then uses a moment later; long enough
+ * that neither races the exit, short enough that the shell comes back promptly.
+ */
+const IDLE_EXIT_MS = 3000;
 
 const USAGE = `diff-viewer ${VERSION} — review a diff in your browser
 
@@ -47,8 +53,8 @@ Options:
   -h, --help        Show this help.
   -v, --version     Show the version.
 
-Reads the diff from stdin when no file is given. Serves the page once, then
-exits — the tab stays usable, since review comments live in the page.`;
+Reads the diff from stdin when no file is given. Exits shortly after the page
+is loaded — the tab stays usable, since review comments live in the page.`;
 
 // ---------------------------------------------------------------------------
 // Command line
@@ -217,6 +223,9 @@ ${diffJs}</script>
  */
 function serveOnce(document, options) {
   const token = crypto.randomBytes(16).toString('hex');
+  let inFlight = 0;
+  let served = false;
+  let idleTimer = null;
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
@@ -226,6 +235,9 @@ function serveOnce(document, options) {
       return;
     }
 
+    inFlight++;
+    clearTimeout(idleTimer);
+    served = true;
     res.writeHead(200, {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',
@@ -233,10 +245,32 @@ function serveOnce(document, options) {
     // Only once the response is on the wire is the page really the browser's;
     // exiting at write() time can cut the socket before it is all sent.
     res.end(document, () => {
-      server.close();
-      process.exit(0);
+      inFlight--;
+      scheduleExit();
     });
   });
+
+  /**
+   * Leave once the page has been collected and nothing more is being asked for.
+   *
+   * Exiting the instant the first response completed was tempting — the page is
+   * self-contained, so one request is all it needs — but the tab is a live
+   * document that outlives this process, and reloading it is an ordinary thing
+   * to do. A reload that lands on a dead port shows an error page and takes the
+   * reader's review comments with it. So the server stays up for a short while
+   * after each request, and a reload keeps it alive; only a genuinely quiet
+   * stretch ends it.
+   */
+  function scheduleExit() {
+    clearTimeout(idleTimer);
+    if (inFlight > 0) {
+      return;
+    }
+    idleTimer = setTimeout(() => {
+      server.close();
+      process.exit(0);
+    }, IDLE_EXIT_MS);
+  }
 
   server.on('error', (error) => fail(error.message));
 
@@ -249,10 +283,12 @@ function serveOnce(document, options) {
     }
   });
 
-  const giveUp = setTimeout(() => {
-    fail('the browser never loaded the page');
+  // Nothing ever came to collect the page.
+  setTimeout(() => {
+    if (!served) {
+      fail('the browser never loaded the page');
+    }
   }, PICKUP_TIMEOUT_MS);
-  giveUp.unref?.();
 
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {

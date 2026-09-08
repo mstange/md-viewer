@@ -61,9 +61,9 @@
   function contextOf(line) {
     var table = line.closest('.dv-table');
     if (!table) return [];
-    // Mirrors are the second drawing of an unchanged line, not a line of the
-    // diff, so they are left out of the quote.
-    var lines = table.querySelectorAll('.dv-line:not(.mdv-mirror)');
+    // The mirrored copy of an unchanged line is the same line drawn again in
+    // the other column, not a line of the diff, so it is left out of the quote.
+    var lines = table.querySelectorAll('.dv-line:not(.dv-line-mirror)');
     var at = Array.prototype.indexOf.call(lines, line);
     if (at === -1) return [];
 
