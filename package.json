@@ -9,6 +9,7 @@
     "diff-viewer": "./diff-viewer.js"
   },
   "scripts": {
+    "test": "node --test",
     "install-link": "./install.sh",
     "uninstall-link": "./install.sh --uninstall"
   },

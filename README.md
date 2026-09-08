@@ -30,6 +30,9 @@ link somewhere else.
 
 Requires Node 20.11 or newer.
 
+`npm test` runs the diff renderer's tests: no dependencies beyond the ones
+above, since they read the rendered HTML directly.
+
 ## Usage
 
 ```
