@@ -5,8 +5,12 @@
 :root {
   --dv-add-bg: #e6ffec;
   --dv-add-bg-strong: #abf2bc;
+  /* A whole new line fills its row, so it needs less saturation than a mark
+     that has to stand out from a line's worth of surrounding text. */
+  --dv-add-bg-entire: #d2f8db;
   --dv-del-bg: #ffebe9;
   --dv-del-bg-strong: #ffc1bf;
+  --dv-del-bg-entire: #ffdcd9;
   --dv-space: #8250df;
   --dv-space-bg: #f3eafd;
   --dv-hunk-fg: #59636e;
@@ -17,8 +21,10 @@
   :root {
     --dv-add-bg: #12261e;
     --dv-add-bg-strong: #1f6c33;
+    --dv-add-bg-entire: #17402a;
     --dv-del-bg: #25171c;
     --dv-del-bg-strong: #8b2c31;
+    --dv-del-bg-entire: #3d1d22;
     --dv-space: #d2a8ff;
     --dv-space-bg: #2b1f3d;
     --dv-hunk-fg: #9198a1;
@@ -187,6 +193,18 @@
 
 .dv-line-del .dv-word {
   background: var(--dv-del-bg-strong);
+}
+
+/* A line that is new or gone in its entirety. The colour fills the row rather
+   than hugging the text: a mark that stops at the last character reads as a
+   highlighter drawn over the words, which is what the word marks above are
+   for. Here it is the line that changed, so the line is what is coloured. */
+.dv-line-entire {
+  background: var(--dv-add-bg-entire);
+}
+
+.dv-line-entire.dv-line-del {
+  background: var(--dv-del-bg-entire);
 }
 
 /* Whitespace-only changes: the point of the line is what you cannot see, so
