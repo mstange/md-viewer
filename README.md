@@ -37,6 +37,7 @@ above, since they read the rendered HTML directly.
 
 ```
 md-viewer [options] <file.md>
+md-viewer [options] [user@]host:/path/to/file.md
 
   -n, --no-watch    Render once to a standalone HTML file in the temp
                     directory, open it, and exit immediately.
@@ -56,6 +57,44 @@ Environment variables:
 | `BROWSER`            | Command used to open the URL.                 |
 | `MD_VIEWER_DEBUG`    | Log why and when the server decides to exit.  |
 | `DIFF_VIEWER_PORT`   | Default port for `diff-viewer`.               |
+| `MD_VIEWER_REMOTE_CMD` | Path to `md-viewer` on the remote host.     |
+
+## Files on another machine
+
+A target spelled the way `scp` spells one is opened over ssh:
+
+```sh
+md-viewer m4:/Volumes/build/firefox/artifacts/overview.md
+```
+
+The file is never copied. `md-viewer` runs on `m4`, serving on that host's
+loopback interface, and this machine forwards a local port to it over the same
+ssh connection — so the browser opens `http://127.0.0.1:<port>` as it always
+does, and the tab behaves exactly as it does for a local file: live reload on
+save, working relative links, and images served from the remote disk.
+
+Nothing is exposed on either network. The server only ever listens on the
+remote loopback, so the URL token and the file's contents stay inside the ssh
+connection, and it works through NAT and firewalls since the only connection
+made is the outgoing ssh one. Closing the tab ends the remote server, the
+tunnel and the local command, in that order; Ctrl-C does the same.
+
+`md-viewer` has to be installed on the remote host, and reachable from a
+*non-interactive* ssh session — which does not read `~/.zshrc` or `~/.bashrc`,
+so a `~/.local/bin` added there will not be found. Either put it somewhere on
+the default PATH or name it:
+
+```sh
+MD_VIEWER_REMOTE_CMD=~/.local/bin/md-viewer md-viewer m4:notes.md
+```
+
+`diff-viewer` takes the same targets, but works differently: a diff cannot
+change under you and has no relative images, so its bytes are fetched over ssh
+and the page is served from here, with no tunnel involved. A remote file that
+turns out to be a diff is handed to `diff-viewer` the same way a local one is.
+
+`-n`/`--no-watch` has no remote meaning — the standalone HTML file it writes
+would be left on the remote machine — so it is refused rather than ignored.
 
 ## What it renders
 

@@ -23,6 +23,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { renderDiff, looksLikeDiff } from './lib/diff.js';
 import { openBrowser } from './lib/browser.js';
+import { parseRemoteTarget, readRemoteFile } from './lib/remote.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(path.join(HERE, 'package.json'), 'utf8')).version;
@@ -43,6 +44,7 @@ const IDLE_EXIT_MS = 3000;
 const USAGE = `diff-viewer ${VERSION} — review a diff in your browser
 
 Usage: diff-viewer [options] [file.diff]
+       diff-viewer [options] [user@]host:/path/to/file.diff
        <command producing a diff> | diff-viewer
 
 Options:
@@ -53,8 +55,10 @@ Options:
   -h, --help        Show this help.
   -v, --version     Show the version.
 
-Reads the diff from stdin when no file is given. Exits shortly after the page
-is loaded — the tab stays usable, since review comments live in the page.`;
+Reads the diff from stdin when no file is given. A target with a host in front
+of it is fetched over ssh; a diff cannot change under us, so it is served from
+here. Exits shortly after the page is loaded — the tab stays usable, since
+review comments live in the page.`;
 
 // ---------------------------------------------------------------------------
 // Command line
@@ -69,9 +73,18 @@ function parseArgs(argv) {
     title: null,
   };
 
+  let literal = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (literal) {
+      takeFile(options, arg);
+      continue;
+    }
     switch (arg) {
+      case '--':
+        // Everything after this is a path, even if it starts with a dash.
+        literal = true;
+        break;
       case '-h':
       case '--help':
         console.log(USAGE);
@@ -106,14 +119,18 @@ function parseArgs(argv) {
         if (arg.startsWith('-') && arg !== '-') {
           fail(`unknown option: ${arg}\n\n${USAGE}`);
         }
-        if (options.file) {
-          fail('only one diff can be viewed at a time');
-        }
-        // "-" is the conventional spelling of "read stdin", and stays null.
-        options.file = arg === '-' ? null : arg;
+        takeFile(options, arg);
     }
   }
   return options;
+}
+
+function takeFile(options, arg) {
+  if (options.file) {
+    fail('only one diff can be viewed at a time');
+  }
+  // "-" is the conventional spelling of "read stdin", and stays null.
+  options.file = arg === '-' ? null : arg;
 }
 
 function fail(message) {
@@ -313,8 +330,23 @@ async function writeStandalone(document, options) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
 
+  // `host:path` only when there is no such file here, so that a local path
+  // containing a colon still wins.
+  const remote = options.file && !fs.existsSync(options.file)
+    ? parseRemoteTarget(options.file)
+    : null;
+
   let source;
-  if (options.file) {
+  if (remote) {
+    try {
+      source = await readRemoteFile(remote);
+    } catch (error) {
+      fail(error.message);
+    }
+    // The title comes from the file name, and the host is the part that says
+    // which of several same-named patches this one is.
+    options.file = `${remote.hostSpec}:${remote.file}`;
+  } else if (options.file) {
     try {
       source = await fsp.readFile(options.file, 'utf8');
     } catch (error) {

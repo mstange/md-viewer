@@ -17,6 +17,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { renderMarkdown } from './lib/render.js';
 import { openBrowser } from './lib/browser.js';
 import { looksLikeDiff } from './lib/diff.js';
+import { parseRemoteTarget, readRemoteFile, startRemoteViewer } from './lib/remote.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(path.join(HERE, 'package.json'), 'utf8')).version;
@@ -36,6 +37,9 @@ const RELOAD_GRACE_MS = 20000;
 const OFFLINE_GRACE_MS = 60000;
 /** A page served this recently still counts as a document on its way in. */
 const PAGE_WINDOW_MS = 1000;
+/** Enough of a remote file to tell a diff from markdown; looksLikeDiff() looks
+ *  at the first 8 KB, so more than that would be fetched and thrown away. */
+const DIFF_SNIFF_BYTES = 8192;
 
 const debug = process.env.MD_VIEWER_DEBUG
   ? (message) => console.log(`md-viewer: [${new Date().toISOString().slice(11, 23)}] ${message}`)
@@ -44,6 +48,7 @@ const debug = process.env.MD_VIEWER_DEBUG
 const USAGE = `md-viewer ${VERSION} — preview a Markdown file in your browser
 
 Usage: md-viewer [options] <file.md>
+       md-viewer [options] [user@]host:/path/to/file.md
 
 Options:
   -n, --no-watch    Render once to a standalone HTML file, open it, and exit
@@ -54,7 +59,11 @@ Options:
   -v, --version     Show the version.
 
 While watching, md-viewer stays in the foreground and reloads the tab whenever
-the file changes. Closing the tab exits the program.`;
+the file changes. Closing the tab exits the program.
+
+A target with a host in front of it is opened over ssh: md-viewer runs on that
+host and this one forwards a local port to it, so the tab behaves as it does
+for a local file — live reload included. md-viewer has to be installed there.`;
 
 // ---------------------------------------------------------------------------
 // Command line
@@ -68,9 +77,19 @@ function parseArgs(argv) {
     open: true,
   };
 
+  let literal = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (literal) {
+      takeFile(options, arg);
+      continue;
+    }
     switch (arg) {
+      case '--':
+        // Everything after this is a path, even if it starts with a dash. The
+        // remote side is invoked with it, so this side has to understand it too.
+        literal = true;
+        break;
       case '-h':
       case '--help':
         console.log(USAGE);
@@ -102,10 +121,7 @@ function parseArgs(argv) {
         if (arg.startsWith('-') && arg !== '-') {
           fail(`unknown option: ${arg}\n\n${USAGE}`);
         }
-        if (options.file) {
-          fail('only one file can be viewed at a time');
-        }
-        options.file = arg;
+        takeFile(options, arg);
     }
   }
 
@@ -113,6 +129,13 @@ function parseArgs(argv) {
     fail(`no file given\n\n${USAGE}`);
   }
   return options;
+}
+
+function takeFile(options, arg) {
+  if (options.file) {
+    fail('only one file can be viewed at a time');
+  }
+  options.file = arg;
 }
 
 function fail(message) {
@@ -611,9 +634,87 @@ function serve(initialFile, options) {
 }
 
 // ---------------------------------------------------------------------------
+// Remote mode: the viewer runs over there, the browser connects through ssh
+// ---------------------------------------------------------------------------
+
+async function viewRemote(target, options) {
+  // The same handoff as for a local file, decided here rather than on the far
+  // side. Left to the remote md-viewer it would start the remote diff-viewer,
+  // which serves one self-contained page and leaves within seconds — taking
+  // the tunnel with it while the tab is still loading. A diff needs no tunnel
+  // at all: it cannot change, so its bytes are the whole document.
+  // Only the head is fetched: looksLikeDiff() reads the first few kilobytes and
+  // no more, so pulling a whole file across to answer a yes/no question would
+  // be waste on exactly the slow link that makes tunnelling worthwhile.
+  let head;
+  try {
+    head = await readRemoteFile(target, { maxBytes: DIFF_SNIFF_BYTES });
+  } catch (error) {
+    fail(error.message);
+  }
+  if (looksLikeDiff(head)) {
+    console.log('md-viewer: this looks like a diff, opening it with diff-viewer.');
+    // Given the target rather than the bytes: diff-viewer fetches it over its
+    // own ssh connection, which keeps the whole file out of this process and
+    // the two paths through diff-viewer identical.
+    const args = [path.join(HERE, 'diff-viewer.js'), '--', `${target.hostSpec}:${target.file}`];
+    if (!options.open) args.push('--no-open');
+    if (options.port) args.push('--port', String(options.port));
+    const child = spawn(process.execPath, args, { stdio: 'inherit' });
+    child.on('exit', (code) => process.exit(code ?? 0));
+    return;
+  }
+
+  if (!options.watch) {
+    fail('--no-watch renders a file next to itself, which for a remote file would leave it\n' +
+         'on the remote machine. Drop the flag to view it through ssh.');
+  }
+  if (options.port) {
+    // The remote picks its own port — that is the only way to be sure it is
+    // free there — so --port can only mean the local end of the tunnel.
+    console.log(`md-viewer: --port applies to the local end of the tunnel.`);
+  }
+
+  const tool = process.env.MD_VIEWER_REMOTE_CMD || 'md-viewer';
+  let session;
+  try {
+    session = await startRemoteViewer({ target, tool, localPort: options.port });
+  } catch (error) {
+    fail(error.message);
+  }
+
+  console.log(`md-viewer: watching ${target.hostSpec}:${target.file}`);
+  console.log(`md-viewer: ${session.url}`);
+  if (options.open) {
+    openBrowser(session.url);
+  }
+
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+      console.log('');
+      // The remote viewer is a child of this ssh session; killing it takes the
+      // remote server down too, rather than leaving it serving on that host.
+      session.ssh.kill();
+      process.exit(0);
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+
+  // `host:path` before anything touches the filesystem: the file is not here,
+  // and a local path that happens to exist under that name would be the wrong
+  // document. An existing local file wins, though, so that a directory really
+  // named `m4:` keeps working.
+  const remote = fs.existsSync(options.file) ? null : parseRemoteTarget(options.file);
+  if (remote) {
+    await viewRemote(remote, options);
+    return;
+  }
+
   const file = path.resolve(options.file);
 
   let stats;
