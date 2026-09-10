@@ -1,0 +1,275 @@
+/**
+ * Tests for review mode, driven against the real page.
+ *
+ *   node --test
+ *
+ * These build the page the viewers serve, run its scripts in a DOM, and then
+ * select text the way a reader does — by dragging from one place to another,
+ * which is what a Range spanning two nodes is. The cases here are the ones
+ * that came back wrong in a real review: side by side lays deletions and
+ * insertions in two columns, but they are siblings in the markup, so a
+ * selection dragged down one column runs through the other on the way.
+ */
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildDiffPage } from '../lib/diff-page.js';
+
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+/** The change from the review this test was written for. */
+const PATCH = `diff --git a/browser_dbg-backgroundtask-debugging.js b/browser_dbg-backgroundtask-debugging.js
+--- a/browser_dbg-backgroundtask-debugging.js
++++ b/browser_dbg-backgroundtask-debugging.js
+@@ -49,8 +49,11 @@ add_task(async function test_backgroundtask_debugger() {
+   await pushPref("devtools.browsertoolbox.enable-test-server", true);
+   await pushPref("devtools.debugger.prompt-connection", false);
+
+-  // Before we start the background task, the preference file must be flushed to disk.
+-  Services.prefs.savePrefFile(null);
++  // savePrefFile(null) writes off the main thread; pass the file explicitly to
++  // force a blocking write.
++  const prefsFile = Services.dirsvc.get("ProfD", Ci.nsIFile);
++  prefsFile.append("prefs.js");
++  Services.prefs.savePrefFile(prefsFile);
+
+   // This invokes the test-only background task \`BackgroundTask_jsdebugger.jsm\`.
+   const p = do_backgroundtask("jsdebugger", {
+`;
+
+/**
+ * The page, loaded and scripted, with the helpers a test needs to act on it.
+ *
+ * jsdom has no layout and no user, so the two things a reader does are done
+ * here instead: `split()` picks the side-by-side layout the way the toggle
+ * does, and `select()` makes the Range a drag would have left behind.
+ */
+async function page(source = PATCH) {
+  const html = await buildDiffPage(source, { title: 'f', commit: 'abc123', subtitle: 'a change' });
+  const dom = new JSDOM(html, { runScripts: 'dangerously' });
+  const { window } = dom;
+  const document = window.document;
+
+  /** The text cell of the nth line of the diff, counting mirrors out. */
+  const line = (n) =>
+    document.querySelectorAll('#mdv-content .dv-line:not(.dv-line-mirror)')[n].querySelector(
+      '.dv-text'
+    );
+
+  /** The line holding this text, as the page's own markers say it. */
+  const marker = (n) => {
+    const side = line(n).closest('.dv-line').dataset.side;
+    return side === 'add' ? '+' : side === 'del' ? '-' : ' ';
+  };
+
+  /** Every text node under an element, in order, since a line is marked up. */
+  const texts = (element) => {
+    const out = [];
+    const walker = document.createTreeWalker(element, window.NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) out.push(node);
+    return out;
+  };
+
+  return {
+    window,
+    document,
+    line,
+    marker,
+    split() {
+      const toggle = document.getElementById('dv-layout');
+      toggle.checked = true;
+      toggle.dispatchEvent(new window.Event('change'));
+    },
+    /** Drag from the start of line `from` to the end of line `to`. */
+    select(from, to) {
+      const first = texts(line(from))[0];
+      const rest = texts(line(to));
+      const last = rest[rest.length - 1];
+      const range = document.createRange();
+      range.setStart(first, 0);
+      range.setEnd(last, last.textContent.length);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new window.Event('selectionchange'));
+      document.dispatchEvent(new window.Event('mouseup', { bubbles: true }));
+      // Selections have to hold still before the comment box opens.
+      return new Promise((resolve) => window.setTimeout(resolve, 400));
+    },
+    /** Write a comment on the pending selection and save it, as Enter does. */
+    comment(text) {
+      const box = document.querySelector('.mdv-review-box');
+      assert.ok(box, 'a comment box should be open');
+      const textarea = box.querySelector('textarea');
+      textarea.value = text;
+      textarea.dispatchEvent(
+        new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+      );
+    },
+    /** What Copy review would put on the clipboard. */
+    prompt() {
+      let copied = null;
+      window.navigator.clipboard = { writeText: (text) => ((copied = text), Promise.resolve()) };
+      document.querySelector('.mdv-review-copy').click();
+      return copied;
+    },
+  };
+}
+
+test('a selection down the new column quotes the new column only', async () => {
+  const p = await page();
+  p.split();
+  // The renderer pairs each deletion with the insertion that replaced it, so
+  // the markup runs del, add, del, add, add, add, add. The reader drags down
+  // the right column from the first insertion to the last, and the second
+  // deletion sits between them.
+  assert.deepEqual([3, 4, 5, 6, 7, 8, 9].map(p.marker), ['-', '+', '-', '+', '+', '+', '+']);
+  await p.select(4, 9);
+  p.comment('this is abusing a bug of the pref service');
+
+  const prompt = p.prompt();
+  assert.match(prompt, /savePrefFile\(null\) writes off the main thread/);
+  assert.doesNotMatch(
+    prompt.split('```diff')[0],
+    /Before we start the background task/,
+    'the quote should not reach into the old column'
+  );
+  assert.doesNotMatch(
+    prompt.split('```diff')[0],
+    /savePrefFile\(null\);/,
+    'the deleted call sits between the selected lines, and is not part of them'
+  );
+});
+
+test('the quoted diff covers every line the comment was written on', async () => {
+  const p = await page();
+  p.split();
+  await p.select(4, 9);
+  p.comment('why');
+
+  const quoted = p.prompt().split('```diff')[1].split('```')[0];
+  for (const text of [
+    'writes off the main thread',
+    'force a blocking write',
+    'Services.dirsvc.get',
+    'prefsFile.append',
+  ]) {
+    assert.ok(quoted.includes(text), `the quoted diff should include ${text}`);
+  }
+});
+
+test('the quoted diff reads as a patch does, both sides in order', async () => {
+  const p = await page();
+  p.split();
+  await p.select(4, 4);
+  p.comment('why');
+
+  const quoted = p.prompt().split('```diff')[1].split('```')[0];
+  const markers = quoted
+    .split('\n')
+    .map((line) => line.trim()[0])
+    .filter((c) => c === '+' || c === '-');
+  // Deletions come before the insertions that replaced them, as in a unified
+  // diff, and the two sides are not interleaved.
+  assert.deepEqual(markers, ['-', '-', '+', '+', '+']);
+});
+
+test('a comment on several lines names them instead of running them together', async () => {
+  const p = await page();
+  p.split();
+  await p.select(4, 9);
+  p.comment('why');
+
+  const header = p.prompt().split('\n').find((line) => line.startsWith('- '));
+  assert.match(header, /5 lines from "\/\/ savePrefFile\(null\) writes off the main thread/);
+  // Five lines of code on one line is what the quote used to be.
+  assert.doesNotMatch(header, /prefsFile\.append/);
+});
+
+test('a comment within one line still quotes the words it is about', async () => {
+  const p = await page();
+  p.split();
+  await p.select(4, 4);
+  p.comment('why');
+
+  const header = p.prompt().split('\n').find((line) => line.startsWith('- '));
+  assert.match(header, /— "\/\/ savePrefFile\(null\) writes off the main thread/);
+});
+
+test('a comment survives a live reload of the same diff', async () => {
+  const p = await page();
+  p.split();
+  await p.select(4, 9);
+  p.comment('why');
+  const before = p.prompt();
+
+  // A reload re-renders the article and asks review mode to find its anchors
+  // again, which it does from the text it recorded them against.
+  p.window.mdvReviewReattach();
+  assert.equal(p.document.querySelectorAll('mark.mdv-mark[data-comment-id]').length > 0, true);
+  assert.equal(p.prompt(), before);
+});
+
+test('unified reads every line, since it has only one column', async () => {
+  const p = await page();
+  // No split, so no two sides to keep apart: a drag from the first deletion to
+  // the last insertion means all of it, and the quoted diff says so.
+  await p.select(3, 9);
+  p.comment('why');
+  const prompt = p.prompt();
+
+  const header = prompt.split('\n').find((line) => line.startsWith('- '));
+  assert.match(header, /7 lines from "\/\/ Before we start the background task/);
+  const quoted = prompt.split('```diff')[1].split('```')[0];
+  assert.match(quoted, /Before we start the background task/);
+  assert.match(quoted, /writes off the main thread/);
+});
+
+
+/**
+ * A markdown document has no columns and no hooks, so review mode there is the
+ * plain case: the whole article is one text, and a comment quotes what was
+ * selected. This is the behaviour the diff work had to leave alone.
+ */
+test('a markdown document quotes the selection, as it always did', async () => {
+  const review = await fsp.readFile(path.join(ROOT, 'assets', 'review.js'), 'utf8');
+  const dom = new JSDOM(
+    '<div id="mdv-root" data-file="notes.md"><article id="mdv-content">' +
+      '<p>The first paragraph.</p><p>The second paragraph.</p>' +
+      '</article></div>' +
+      '<div id="mdv-review" class="mdv-review-bar" hidden>' +
+      '<span class="mdv-review-count"></span>' +
+      '<button type="button" class="mdv-review-copy"></button></div>' +
+      `<script>${review}<\/script>`,
+    { runScripts: 'dangerously' }
+  );
+  const { window } = dom;
+  const d = window.document;
+
+  const range = d.createRange();
+  range.selectNodeContents(d.querySelectorAll('#mdv-content p')[1].firstChild);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  d.dispatchEvent(new window.Event('selectionchange'));
+  await new Promise((resolve) => window.setTimeout(resolve, 400));
+
+  const textarea = d.querySelector('.mdv-review-box textarea');
+  assert.ok(textarea, 'a comment box should be open');
+  textarea.value = 'say which one';
+  textarea.dispatchEvent(
+    new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+  );
+
+  let copied = null;
+  window.navigator.clipboard = { writeText: (text) => ((copied = text), Promise.resolve()) };
+  d.querySelector('.mdv-review-copy').click();
+  assert.match(copied, /review comments on notes\.md/);
+  assert.match(copied, /— "The second paragraph\."/);
+  assert.match(copied, /say which one/);
+});

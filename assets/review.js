@@ -22,7 +22,10 @@
   var count = bar.querySelector('.mdv-review-count');
   var copy = bar.querySelector('.mdv-review-copy');
 
-  /** @type {{id: string, text: string, anchor: object, quote: string, line: number|null}[]} */
+  /**
+   * @type {{id: string, text: string, anchor: object, quote: string,
+   *   line: number|null, place: object|null, scope: string|null}[]}
+   */
   var comments = [];
   var nextId = 1;
   var pending = null;
@@ -42,13 +45,16 @@
    * that side by side draws in the other column. Counting any of it would put
    * every anchor past it at the wrong offset, and paste a column of line numbers
    * into the middle of a quoted passage.
+   *
+   * `test`, when a scope supplies one, narrows the walk further — see scopeOf.
    */
-  function walkText(root, fn) {
+  function walkText(root, fn, test) {
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode: function (node) {
-        return node.parentElement && node.parentElement.closest('.mdv-aside')
-          ? NodeFilter.FILTER_REJECT
-          : NodeFilter.FILTER_ACCEPT;
+        if (node.parentElement && node.parentElement.closest('.mdv-aside')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return test && !test(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
       },
     });
     var node;
@@ -59,13 +65,51 @@
     return null;
   }
 
-  /** The article's text, as walkText sees it: gutters and mirrors left out. */
-  function articleText() {
+  /**
+   * What counts as one readable document, for a comment written at this node.
+   *
+   * Usually the whole article: a markdown file reads top to bottom and every
+   * word of it belongs to the same text. A diff shown side by side does not.
+   * Its two columns are two versions of a file drawn next to each other, and a
+   * selection dragged down one of them means that column only — but the
+   * deletions and insertions of a changed line are siblings in the markup, so
+   * the browser's own range runs through both. Reading it straight is how a
+   * comment on four new lines came back quoting a deleted one from between
+   * them. So the page gets to say which text a comment can see, and everything
+   * that reads text — the quote, the anchor, the highlight — reads through it.
+   *
+   * A scope is named as well as tested, because a comment outlives the nodes it
+   * was written against: after a live reload its anchor has to be read back
+   * against the same text it came from, and by then there is no selection left
+   * to ask. The name is what a comment keeps.
+   * @returns {{name: string, test: function(Node): boolean}|null}
+   */
+  function scopeOf(node) {
+    return window.mdvReviewScope ? window.mdvReviewScope({ node: node }) : null;
+  }
+
+  /** The scope a comment recorded, rebuilt against the nodes now on the page. */
+  function scopeNamed(name) {
+    if (!name || !window.mdvReviewScope) return null;
+    return window.mdvReviewScope({ name: name });
+  }
+
+  /** The predicate half of a scope, which is all walkText needs. */
+  function testOf(scope) {
+    return scope ? scope.test : null;
+  }
+
+  /** The text of the document a comment sits in, as walkText sees it. */
+  function articleText(test) {
     var text = '';
-    walkText(article, function (node) {
-      text += node.textContent;
-      return false;
-    });
+    walkText(
+      article,
+      function (node) {
+        text += node.textContent;
+        return false;
+      },
+      test
+    );
     return text;
   }
 
@@ -76,15 +120,19 @@
    * every unchanged line it crossed. What the reader means by their selection is
    * the text they can read, once, which is what this returns.
    */
-  function rangeText(range) {
+  function rangeText(range, test) {
     var text = '';
-    walkText(walkRoot(range), function (node) {
-      if (!range.intersectsNode(node)) return false;
-      var from = node === range.startContainer ? range.startOffset : 0;
-      var to = node === range.endContainer ? range.endOffset : node.textContent.length;
-      text += node.textContent.slice(from, to);
-      return false;
-    });
+    walkText(
+      walkRoot(range),
+      function (node) {
+        if (!range.intersectsNode(node)) return false;
+        var from = node === range.startContainer ? range.startOffset : 0;
+        var to = node === range.endContainer ? range.endOffset : node.textContent.length;
+        text += node.textContent.slice(from, to);
+        return false;
+      },
+      test
+    );
     return text;
   }
 
@@ -99,17 +147,21 @@
   }
 
   /** Character offset of a (node, offset) position within articleText(). */
-  function offsetOf(container, containerOffset) {
+  function offsetOf(container, containerOffset, test) {
     var total = 0;
     var found = -1;
-    walkText(article, function (node) {
-      if (node === container) {
-        found = total + containerOffset;
-        return true;
-      }
-      total += node.textContent.length;
-      return false;
-    });
+    walkText(
+      article,
+      function (node) {
+        if (node === container) {
+          found = total + containerOffset;
+          return true;
+        }
+        total += node.textContent.length;
+        return false;
+      },
+      test
+    );
     return found;
   }
 
@@ -117,10 +169,10 @@
   // Anchors: a Range becomes text plus its surroundings, and back again
   // ---------------------------------------------------------------------------
 
-  function createAnchor(range) {
-    var full = articleText();
-    var exact = rangeText(range);
-    var start = offsetOf(range.startContainer, range.startOffset);
+  function createAnchor(range, test) {
+    var full = articleText(test);
+    var exact = rangeText(range, test);
+    var start = offsetOf(range.startContainer, range.startOffset, test);
     if (start === -1) start = full.indexOf(exact);
     var end = start + exact.length;
 
@@ -137,8 +189,8 @@
    * elsewhere in the file does not steal the comment, and falls back to the
    * selected text alone once an edit has disturbed the surroundings.
    */
-  function findAnchor(anchor) {
-    var full = articleText();
+  function findAnchor(anchor, test) {
+    var full = articleText(test);
     var start = -1;
 
     var at = full.indexOf(anchor.prefix + anchor.exact + anchor.suffix);
@@ -156,30 +208,34 @@
     }
 
     if (start === -1 || !anchor.exact) return null;
-    return rangeOverOffsets(start, start + anchor.exact.length);
+    return rangeOverOffsets(start, start + anchor.exact.length, test);
   }
 
-  function rangeOverOffsets(start, end) {
+  function rangeOverOffsets(start, end, test) {
     var seen = 0;
     var startNode = null;
     var startOffset = 0;
     var endNode = null;
     var endOffset = 0;
 
-    walkText(article, function (node) {
-      var len = node.textContent.length;
-      if (!startNode && seen + len > start) {
-        startNode = node;
-        startOffset = start - seen;
-      }
-      if (startNode && seen + len >= end) {
-        endNode = node;
-        endOffset = end - seen;
-        return true;
-      }
-      seen += len;
-      return false;
-    });
+    walkText(
+      article,
+      function (node) {
+        var len = node.textContent.length;
+        if (!startNode && seen + len > start) {
+          startNode = node;
+          startOffset = start - seen;
+        }
+        if (startNode && seen + len >= end) {
+          endNode = node;
+          endOffset = end - seen;
+          return true;
+        }
+        seen += len;
+        return false;
+      },
+      test
+    );
 
     if (!startNode || !endNode) return null;
     var range = document.createRange();
@@ -201,15 +257,15 @@
    * to name the file and quote the surrounding lines.
    * @returns {object|null} extra fields merged into the comment
    */
-  function placeOf(node) {
-    return window.mdvReviewPlace ? window.mdvReviewPlace(node) : null;
+  function placeOf(node, range) {
+    return window.mdvReviewPlace ? window.mdvReviewPlace(node, range) : null;
   }
 
   // ---------------------------------------------------------------------------
   // Highlights
   // ---------------------------------------------------------------------------
 
-  function highlight(range, id) {
+  function highlight(range, id, test) {
     var marks = [];
     // surroundContents throws whenever the range crosses an element boundary,
     // which any selection spanning a link or a bold run does.
@@ -218,7 +274,7 @@
       range.surroundContents(mark);
       marks.push(mark);
     } catch (error) {
-      marks = wrapAcrossNodes(range, id);
+      marks = wrapAcrossNodes(range, id, test);
     }
     for (var i = 0; i < marks.length; i++) {
       bindMark(marks[i], id);
@@ -234,12 +290,16 @@
   }
 
   /** Wrap each text node the range touches, one mark per node. */
-  function wrapAcrossNodes(range, id) {
+  function wrapAcrossNodes(range, id, test) {
     var nodes = [];
-    walkText(walkRoot(range), function (node) {
-      if (range.intersectsNode(node)) nodes.push(node);
-      return false;
-    });
+    walkText(
+      walkRoot(range),
+      function (node) {
+        if (range.intersectsNode(node)) nodes.push(node);
+        return false;
+      },
+      test
+    );
 
     var marks = [];
     for (var i = 0; i < nodes.length; i++) {
@@ -380,6 +440,7 @@
       quote: pending.quote,
       line: pending.line,
       place: pending.place,
+      scope: pending.scope,
     });
 
     // The provisional highlight becomes this comment's own.
@@ -423,12 +484,15 @@
   function reattach() {
     for (var i = 0; i < comments.length; i++) {
       var comment = comments[i];
-      var range = findAnchor(comment.anchor);
+      // The anchor was recorded from one column's text, so it only reads back
+      // against that same column — which is why the comment kept its name.
+      var test = testOf(scopeNamed(comment.scope));
+      var range = findAnchor(comment.anchor, test);
       if (!range) continue;
       // The line may have moved with the edit that triggered the reload.
       var line = lineOf(range.startContainer);
       if (line) comment.line = line;
-      highlight(range, comment.id);
+      highlight(range, comment.id, test);
     }
     render();
   }
@@ -449,8 +513,11 @@
 
     var range = selection.getRangeAt(0);
     if (!article.contains(range.commonAncestorContainer)) return;
+    // Where the drag began is what says which column the reader meant, so the
+    // scope comes from the start of the selection and not from its extent.
+    var scope = scopeOf(range.startContainer);
     // Not selection.toString(): see rangeText().
-    var text = rangeText(range).trim();
+    var text = rangeText(range, testOf(scope)).trim();
     if (!text) return;
 
     // Selecting inside an existing comment's highlight means editing it, and
@@ -467,17 +534,19 @@
     selection = window.getSelection();
     if (!selection.rangeCount || !selection.toString().trim()) return;
     range = selection.getRangeAt(0);
-    text = rangeText(range).trim();
+    scope = scopeOf(range.startContainer);
+    text = rangeText(range, testOf(scope)).trim();
     if (!text) return;
 
     pending = {
-      anchor: createAnchor(range),
+      anchor: createAnchor(range, testOf(scope)),
       quote: text,
       line: lineOf(range.startContainer),
-      place: placeOf(range.startContainer),
+      place: placeOf(range.startContainer, range),
+      scope: scope ? scope.name : null,
     };
 
-    var marks = highlight(range, null);
+    var marks = highlight(range, null, testOf(scope));
     for (var i = 0; i < marks.length; i++) {
       marks[i].classList.add('mdv-mark-pending');
     }

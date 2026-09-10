@@ -1,14 +1,15 @@
 /**
  * diff-viewer — the parts of the page that are not the diff itself: the
- * unified/side-by-side toggle, and the two hooks review.js asks for so that a
- * comment can name the file and line it lands on.
+ * unified/side-by-side toggle, and the hooks review.js asks for so that a
+ * comment can name the file and lines it lands on, read only the column it was
+ * drawn in, and be copied out as something a patch reader can follow.
  */
 (function () {
   'use strict';
 
   /** Below this, two columns of code are too narrow to read. */
   var SPLIT_MIN_WIDTH = 1400;
-  /** Lines of the diff quoted around a comment, on each side. */
+  /** Lines of the diff quoted either side of the lines a comment covers. */
   var CONTEXT_LINES = 2;
 
   var root = document.getElementById('mdv-root');
@@ -80,38 +81,123 @@
   }
 
   /**
-   * The lines around a comment, as they appear in the diff. Line numbers drift
-   * between revisions of a patch, so an agent given the surrounding text can
-   * still find the passage when the numbers no longer match.
+   * The lines of the diff a comment covers, plus a few either side. Line
+   * numbers drift between revisions of a patch, so an agent given the
+   * surrounding text can still find the passage when the numbers no longer
+   * match.
+   *
+   * The window runs from the comment's first line to its last, not outwards
+   * from wherever it started: a comment on four added lines used to quote two
+   * lines either side of the first of them, cutting off the code it was about.
    */
-  function contextOf(line) {
-    var table = line.closest('.dv-table');
+  function contextOf(first, last) {
+    var table = first.closest('.dv-table');
     if (!table) return [];
-    // The mirrored copy of an unchanged line is the same line drawn again in
-    // the other column, not a line of the diff, so it is left out of the quote.
-    var lines = table.querySelectorAll('.dv-line:not(.dv-line-mirror)');
-    var at = Array.prototype.indexOf.call(lines, line);
-    if (at === -1) return [];
+    var lines = patchOrder(table);
+    var start = lines.indexOf(first);
+    var end = lines.indexOf(last || first);
+    if (start === -1) return [];
+    if (end < start) end = start;
 
     var out = [];
-    var from = Math.max(0, at - CONTEXT_LINES);
-    var to = Math.min(lines.length - 1, at + CONTEXT_LINES);
+    var from = Math.max(0, start - CONTEXT_LINES);
+    var to = Math.min(lines.length - 1, end + CONTEXT_LINES);
     for (var i = from; i <= to; i++) {
-      out.push({ text: markerOf(lines[i]) + textOf(lines[i]), here: i === at });
+      out.push({ text: markerOf(lines[i]) + textOf(lines[i]), here: i >= start && i <= end });
     }
     return out;
   }
 
-  window.mdvReviewPlace = function (node) {
+  /**
+   * A file's lines in the order the patch has them.
+   *
+   * The page pairs each deletion with the insertion that replaced it, so that
+   * side by side can draw the two on one line; in the markup they then
+   * alternate. A patch does not alternate — it gives a run of deletions and
+   * then the run of insertions that replaced them — and a quote that reads
+   * `-old +new -old +new` is not a diff anyone or anything can apply. So each
+   * run of changed lines is put back in the order it was in, which unchanged
+   * lines break.
+   */
+  function patchOrder(table) {
+    // The mirrored copy of an unchanged line is the same line drawn again in
+    // the other column, not a line of the diff, so it is left out of the quote.
+    var lines = table.querySelectorAll('.dv-line:not(.dv-line-mirror)');
+    var out = [];
+    var dels = [];
+    var adds = [];
+    var flush = function () {
+      out = out.concat(dels, adds);
+      dels = [];
+      adds = [];
+    };
+
+    for (var i = 0; i < lines.length; i++) {
+      var side = lines[i].dataset.side;
+      if (side === 'del') {
+        dels.push(lines[i]);
+      } else if (side === 'add') {
+        adds.push(lines[i]);
+      } else {
+        flush();
+        out.push(lines[i]);
+      }
+    }
+    flush();
+    return out;
+  }
+
+  /**
+   * The half of the diff a comment written at this node belongs to.
+   *
+   * Side by side draws two versions of a file in two columns, but a changed
+   * line puts its deletion and its insertion next to each other in the markup,
+   * so a range dragged down one column runs through the other on the way. A
+   * comment means the column it was drawn in, and this is what says so.
+   *
+   * Unified has one column, and there is nothing to separate: every line of it
+   * is text the reader is reading, in the order they read it.
+   */
+  window.mdvReviewScope = function (which) {
+    // A name is a comment asking for the scope it recorded; a node is a live
+    // selection, which only has a side to be on when the columns are drawn.
+    var side = which.name;
+    if (!side) {
+      if (!root.classList.contains('dv-split')) return null;
+      var line = lineOf(which.node);
+      if (!line) return null;
+      side = line.dataset.side;
+      // An unchanged line is drawn in both columns, so a selection starting on
+      // one says nothing yet about which side is meant. It keeps both, and
+      // reads as a unified diff does: deletion, then what replaced it.
+      if (side !== 'del' && side !== 'add') return null;
+    }
+
+    var other = side === 'del' ? 'add' : 'del';
+    return {
+      name: side,
+      test: function (textNode) {
+        var at = lineOf(textNode);
+        // Context lines are shared ground: they read the same on both sides.
+        return !at || at.dataset.side !== other;
+      },
+    };
+  };
+
+  window.mdvReviewPlace = function (node, range) {
     var line = lineOf(node);
     if (!line) return null;
     var file = line.closest('.dv-file');
+    // The end of a range can sit just past the last line it covers — on the
+    // row after it, or on a node with no line at all — in which case the line
+    // the comment started on is the best last line there is.
+    var last = (range && lineOf(range.endContainer)) || line;
     return {
       path: file ? file.dataset.path : null,
       // A deletion has no line in the new file; say which side its number came
       // from, so it is not read against the wrong version.
       side: line.dataset.side === 'del' ? 'old' : 'new',
-      context: contextOf(line),
+      context: contextOf(line, last),
     };
   };
 
@@ -141,12 +227,31 @@
         if (place.side === 'old') where += ' (line number in the original file)';
       }
 
-      out.push('- ' + where + ' — "' + comment.quote + '"');
-      if (place.context && place.context.length) {
+      var context = place.context || [];
+      var covered = context.filter(function (entry) {
+        return entry.here;
+      });
+      // Where a comment sits within one line, the words it is about are worth
+      // saying outright. Where it spans lines they are not: the quote runs
+      // several lines of code together on one, which is harder to read than the
+      // diff below — and less exact, since the diff says which lines they were.
+      if (covered.length > 1) {
+        // Drop the +/- marker: it is in the diff below, and reads as part of
+        // the code when the line is quoted on its own.
+        var opening = covered[0].text.slice(1).trim();
+        out.push('- ' + where + ' — ' + covered.length + ' lines from "' + opening + '"');
+      } else {
+        out.push('- ' + where + ' — "' + comment.quote + '"');
+      }
+
+      if (context.length) {
         out.push('');
+        // The block stays a diff anyone can apply, so the lines the comment is
+        // about are not marked inside it — the line number and the quote above
+        // are what point into it.
         out.push('  ```diff');
-        for (var j = 0; j < place.context.length; j++) {
-          out.push('  ' + place.context[j].text);
+        for (var j = 0; j < context.length; j++) {
+          out.push('  ' + context[j].text);
         }
         out.push('  ```');
         out.push('');
