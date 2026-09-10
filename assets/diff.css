@@ -245,6 +245,58 @@
   grid-template-columns: 3.4em 3.4em 1.4em 1fr;
 }
 
+/* The commit message.
+
+   Prose, not code: it reads in the body font, and it keeps its own single
+   column in both layouts — there is no old and new version of a message to put
+   side by side. It is still built out of .dv-line rows, because that is what
+   the review hooks anchor a comment to, so the grid is what has to be undone
+   rather than the markup. */
+.dv-message .dv-msg-table {
+  padding: 0.6rem 0.9rem;
+}
+
+/* One column in both layouts, and it has to outrank the per-layout grids
+   further down the file rather than merely tie with them on specificity. */
+.dv-message .dv-line-msg,
+.dv-unified .dv-message .dv-line-msg,
+.dv-split .dv-message .dv-line-msg {
+  grid-template-columns: 1fr;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* The subject line is the title of the change; the body explains it. */
+.dv-line-msg[data-msg-line='1'] .dv-text {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.dv-line-msg .dv-text {
+  padding: 0 0.2em;
+  /* A message is hard-wrapped by whoever wrote it, so its own line breaks are
+     the ones worth keeping — but a line longer than the page still wraps. */
+  white-space: pre-wrap;
+}
+
+/* Author and date, on the message's header rather than in the toolbar: they
+   belong to the commit being read, not to the page. */
+.dv-msg-header {
+  display: flex;
+  gap: 0.35rem;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+}
+
+.dv-msg-key::after {
+  content: ':';
+}
+
+.dv-msg-value {
+  color: var(--fg);
+}
+
 /* Side by side: deletions left, insertions right, each pair on one line. */
 
 .dv-split .dv-row-change,

@@ -131,6 +131,13 @@ holds nothing else. A review copied out of a commit's tab names that commit by
 its full sha, so comments on different commits of a stack stay apart once they
 are pasted somewhere else.
 
+The commit's message is shown above the diff, in full rather than as a subject
+line: the message is where a change says *why*, which is most of what makes a
+patch reviewable. It is ordinary content of the page, so a passage of it can be
+commented on like any line of code — a claim in a message can be wrong when
+every line of the diff is right. Such a comment names the message rather than a
+file, and is quoted as prose rather than as a patch.
+
 ## Review comments
 
 Select text in the preview and a box opens to comment on it. `Enter` saves,
@@ -235,6 +242,15 @@ what it is about once it has left the tab:
 
 ~~~
 Please address these review comments on commit dd8641c54ce3de977764fdc1afbe8de3ae6f1b18 (raise the window on SetFocus):
+
+- the commit message, line 4 — "it always activated the app"
+
+  ```
+  Only raise the window when the caller asked for focus, since
+  it always activated the app and stole focus from other spaces.
+  ```
+
+  this says the opposite of what the patch does
 ~~~
 
 Unlike `md-viewer` there is nothing to watch — a diff piped in has no file

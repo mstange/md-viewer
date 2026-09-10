@@ -192,6 +192,19 @@
     // row after it, or on a node with no line at all — in which case the line
     // the comment started on is the best last line there is.
     var last = (range && lineOf(range.endContainer)) || line;
+
+    // A comment on the commit message. Its number is a line of the message,
+    // which is not a line of any file, so it is reported as its own kind of
+    // place rather than as a path — a review that said "foo.js:3" for a claim
+    // in the message would send the reader to the wrong text entirely.
+    if (line.dataset.side === 'msg') {
+      return {
+        message: true,
+        line: Number(line.dataset.msgLine) || null,
+        context: contextOf(line, last),
+      };
+    }
+
     return {
       path: file ? file.dataset.path : null,
       // A deletion has no line in the new file; say which side its number came
@@ -220,11 +233,20 @@
     for (var i = 0; i < comments.length; i++) {
       var comment = comments[i];
       var place = comment.place || {};
-      var where = place.path || 'unknown file';
-      if (comment.line) {
-        where += ':' + comment.line;
-        // Only worth saying when it changes how the number should be read.
-        if (place.side === 'old') where += ' (line number in the original file)';
+      var where;
+      if (place.message) {
+        // A comment on the message names the message, not a file. Its number
+        // counts lines of the message text, which is worth saying: it is not a
+        // line of anything the patch touches.
+        where = 'the commit message';
+        if (place.line) where += ', line ' + place.line;
+      } else {
+        where = place.path || 'unknown file';
+        if (comment.line) {
+          where += ':' + comment.line;
+          // Only worth saying when it changes how the number should be read.
+          if (place.side === 'old') where += ' (line number in the original file)';
+        }
       }
 
       var context = place.context || [];
@@ -248,10 +270,14 @@
         out.push('');
         // The block stays a diff anyone can apply, so the lines the comment is
         // about are not marked inside it — the line number and the quote above
-        // are what point into it.
-        out.push('  ```diff');
+        // are what point into it. The message is prose rather than a patch, so
+        // it is quoted as text: calling it a diff would put a marker column in
+        // front of English sentences and invite an agent to apply it.
+        out.push(place.message ? '  ```' : '  ```diff');
         for (var j = 0; j < context.length; j++) {
-          out.push('  ' + context[j].text);
+          // Every message line carries the marker a context line would; on
+          // prose that leading space is noise, so it comes back off.
+          out.push('  ' + (place.message ? context[j].text.slice(1) : context[j].text));
         }
         out.push('  ```');
         out.push('');

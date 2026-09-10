@@ -12,7 +12,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderDiff, looksLikeDiff } from '../lib/diff.js';
+import { renderDiff, looksLikeDiff, splitCommitMessage } from '../lib/diff.js';
 
 const TAB = String.fromCharCode(9);
 
@@ -244,4 +244,124 @@ test('a diff with no file changes still renders', () => {
   const result = renderDiff('diff --git a/x.png b/x.png\nBinary files a/x.png and b/x.png differ\n');
   assert.equal(result.files, 1);
   assert.ok(result.html.includes('No textual changes'));
+});
+
+// ---------------------------------------------------------------------------
+// The commit message above a patch
+// ---------------------------------------------------------------------------
+
+/** The shape `git show` writes: headers, the message indented by four, a
+ *  --stat block, then the diff. */
+const SHOWN = [
+  'commit d40473bed3fec95dab0dc9199e080537ac2750a3',
+  'Author: A Name <a@example.invalid>',
+  'Date:   Thu Sep 10 09:45:56 2026 +0200',
+  '',
+  '    The subject line',
+  '    ',
+  '    A paragraph explaining why, which is the part a subject line',
+  '    cannot carry.',
+  '',
+  '    Another paragraph.',
+  '',
+  '---',
+  ' f.txt | 2 +-',
+  ' 1 file changed, 1 insertion(+), 1 deletion(-)',
+  '',
+  'diff --git a/f.txt b/f.txt',
+  '--- a/f.txt',
+  '+++ b/f.txt',
+  '@@ -1,1 +1,1 @@',
+  '-old',
+  '+new',
+  '',
+].join('\n');
+
+test('the message above a patch is split off, whole', () => {
+  const { message, patch } = splitCommitMessage(SHOWN);
+  assert.deepEqual(message.headers, [
+    ['commit', 'd40473bed3fec95dab0dc9199e080537ac2750a3'],
+    ['Author', 'A Name <a@example.invalid>'],
+    ['Date', 'Thu Sep 10 09:45:56 2026 +0200'],
+  ]);
+  // Every paragraph, not just the subject: the body is the reason for the
+  // change, and dropping it is what made a commit unreadable in the viewer.
+  assert.match(message.body, /^The subject line$/m);
+  assert.match(message.body, /part a subject line\ncannot carry\./);
+  assert.match(message.body, /^Another paragraph\.$/m);
+  // The four-space indent git adds is not part of what was written.
+  assert.ok(!/^ /m.test(message.body), 'the indent is stripped');
+  assert.match(patch, /^---\n f\.txt/, 'the patch keeps its stat block');
+});
+
+test('a diff with no commit header keeps every byte', () => {
+  const bare = patch('-old\n+new');
+  const { message, patch: rest } = splitCommitMessage(bare);
+  assert.equal(message, null);
+  assert.equal(rest, bare, 'nothing is eaten from a piped diff');
+});
+
+test('a message that mentions a diff marker does not end the message early', () => {
+  const source = [
+    'commit 0123456789abcdef0123456789abcdef01234567',
+    'Author: A <a@example.invalid>',
+    '',
+    '    Fix the parser',
+    '    ',
+    '    The line "--- a/f" used to end the message, since it is not indented',
+    '    in a patch. Here it is, indented, and so still prose.',
+    '',
+    'diff --git a/f.txt b/f.txt',
+    '--- a/f.txt',
+    '+++ b/f.txt',
+    '@@ -1,1 +1,1 @@',
+    '-old',
+    '+new',
+  ].join('\n');
+  const { message, patch: rest } = splitCommitMessage(source);
+  assert.match(message.body, /still prose\./);
+  assert.match(rest, /^diff --git/);
+});
+
+test('the message is rendered as commentable lines above the files', () => {
+  const rendered = renderDiff(SHOWN);
+  assert.match(rendered.html, /class="dv-file dv-message"/);
+  // Built out of the same rows the diff uses, which is what lets a comment
+  // anchor to the message at all.
+  assert.match(rendered.html, /class="dv-line dv-line-msg" data-side="msg"/);
+  assert.match(rendered.html, /data-msg-line="1"/);
+  assert.match(rendered.html, /The subject line/);
+  assert.match(rendered.html, /cannot carry\./);
+  // The message sits above the first file, in reading order.
+  assert.ok(
+    rendered.html.indexOf('dv-message') < rendered.html.indexOf('dv-file-0'),
+    'the message comes first',
+  );
+  // The counts are the patch's, and the message is not a changed file.
+  assert.equal(rendered.files, 1);
+  assert.equal(rendered.additions, 1);
+  assert.equal(rendered.deletions, 1);
+});
+
+test('a message with html in it is escaped', () => {
+  const source = SHOWN.replace('The subject line', 'Fix <script>alert(1)</script>');
+  const rendered = renderDiff(source);
+  assert.ok(!rendered.html.includes('<script>alert(1)</script>'));
+  assert.match(rendered.html, /&lt;script&gt;/);
+});
+
+test('a commit that changes nothing still shows its message', () => {
+  // An empty commit has a message and no files, and the message is then the
+  // entire point of looking at it.
+  const source = [
+    'commit 0123456789abcdef0123456789abcdef01234567',
+    'Author: A <a@example.invalid>',
+    '',
+    '    An empty commit',
+    '',
+  ].join('\n');
+  const rendered = renderDiff(source);
+  assert.match(rendered.html, /An empty commit/);
+  assert.match(rendered.html, /dv-message/);
+  assert.equal(rendered.files, 0);
 });
