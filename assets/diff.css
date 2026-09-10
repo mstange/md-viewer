@@ -278,6 +278,9 @@
   /* A message is hard-wrapped by whoever wrote it, so its own line breaks are
      the ones worth keeping — but a line longer than the page still wraps. */
   white-space: pre-wrap;
+  /* An empty line between paragraphs is empty, with no character standing in
+     for it, so it needs a height of its own to be the blank line it was. */
+  min-height: 1.5em;
 }
 
 /* Author and date, on the message's header rather than in the toolbar: they

@@ -365,3 +365,16 @@ test('a commit that changes nothing still shows its message', () => {
   assert.match(rendered.html, /dv-message/);
   assert.equal(rendered.files, 0);
 });
+
+test('an empty line of the message stays empty', () => {
+  const rendered = renderDiff(SHOWN);
+  // A non-breaking space would make the row the right height and the wrong
+  // text: it ends up in the quote a copied review carries back.
+  assert.ok(!rendered.html.includes('&nbsp;'), 'no filler character');
+  assert.ok(!rendered.html.includes('\u00a0'), 'and none decoded either');
+  assert.match(
+    rendered.html,
+    /data-msg-line="2"><span class="dv-num"><\/span><span class="dv-text"><\/span>/,
+    'the blank line between subject and body is an empty span',
+  );
+});
