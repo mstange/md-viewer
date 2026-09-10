@@ -149,6 +149,30 @@ test('the patch of a commit is a diff the renderer can read', async () => {
   assert.equal(await commits.subject(sha), 'the first commit');
 });
 
+test('a patch carries enough context to read the change in', async () => {
+  const { dir, git } = scratchRepo();
+  // A change in the middle of a long file, so there is room either side of it
+  // for as much context as the patch cares to carry.
+  const lines = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`);
+  fs.writeFileSync(path.join(dir, 'a.txt'), lines.join('\n') + '\n');
+  git('commit', '-qam', 'a long file');
+  lines[19] = 'line 20, changed';
+  fs.writeFileSync(path.join(dir, 'a.txt'), lines.join('\n') + '\n');
+  git('commit', '-qam', 'one line in the middle');
+  const head = git('rev-parse', 'HEAD').trim();
+
+  const commits = openRepository(path.join(dir, 'notes.md'));
+  await commits.resolve([head.slice(0, 12)]);
+  const patch = (await commits.show(head.slice(0, 12))).split('\n');
+
+  const at = patch.findIndex((line) => line.startsWith('@@'));
+  let before = 0;
+  while (patch[at + 1 + before].startsWith(' ')) before++;
+  // Git's own default is 3, which places a change without showing what it
+  // does. A reviewer reads the function around it.
+  assert.equal(before, 10);
+});
+
 test('showing something that is not a commit id is refused, not run', async () => {
   const { dir } = scratchRepo();
   const commits = openRepository(path.join(dir, 'notes.md'));
