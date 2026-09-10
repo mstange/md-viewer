@@ -107,6 +107,30 @@ to another `.md` file opens that file in the same tab, watched like the first
 one. Links to other sites open in a new tab, so following one never unloads the
 preview.
 
+## Commit links
+
+A commit id written in backticks becomes a link to that commit's diff, opened
+in a new tab as a review page — the same one `diff-viewer` shows, with the same
+comment-and-copy workflow.
+
+The commit is looked up in the git repository containing the file being viewed,
+found by walking up from its directory. Only ids that repository really has
+become links: a bug number, a hex colour or a sha from some other checkout is
+left as the code span it was, so a document is not littered with dead links.
+
+This is what makes a file that reviews a stack of work readable — a table of
+shas becomes a table of diffs to click through:
+
+| n | commit | what |
+| --- | --- | --- |
+| 1 | `dd8641c54ce3` | raise the window on SetFocus |
+| 2 | `8d10d1bb756e` | un-skip the a11y test on mac |
+
+Ids are recognised between 7 and 40 hex characters, and only when a code span
+holds nothing else. A review copied out of a commit's tab names that commit by
+its full sha, so comments on different commits of a stack stay apart once they
+are pasted somewhere else.
+
 ## Review comments
 
 Select text in the preview and a box opens to comment on it. `Enter` saves,
@@ -205,6 +229,13 @@ The surrounding lines are there because line numbers drift between revisions of
 a patch: quoting the passage lets an agent find it even when the numbers have
 moved. A comment on a deleted line says so, since its number belongs to the
 original file rather than the new one.
+
+A page opened from a commit link names the commit instead, so the review says
+what it is about once it has left the tab:
+
+~~~
+Please address these review comments on commit dd8641c54ce3de977764fdc1afbe8de3ae6f1b18 (raise the window on SetFocus):
+~~~
 
 Unlike `md-viewer` there is nothing to watch — a diff piped in has no file
 behind it and cannot change. So the page is self-contained, with its stylesheet

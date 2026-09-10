@@ -21,7 +21,8 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { renderDiff, looksLikeDiff } from './lib/diff.js';
+import { looksLikeDiff } from './lib/diff.js';
+import { buildDiffPage } from './lib/diff-page.js';
 import { openBrowser } from './lib/browser.js';
 import { parseRemoteTarget, readRemoteFile } from './lib/remote.js';
 
@@ -138,9 +139,6 @@ function fail(message) {
   process.exit(1);
 }
 
-const escapeHtml = (text) =>
-  text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
@@ -165,68 +163,6 @@ function defaultTitle(source, file) {
   if (file) return path.basename(file);
   const match = /^(?:diff --git \S+ b\/|\+\+\+ b?\/?)(\S+)/m.exec(source);
   return match ? `diff — ${match[1]}` : 'diff';
-}
-
-function summary(rendered) {
-  const files = `${rendered.files} file${rendered.files === 1 ? '' : 's'} changed`;
-  return (
-    `<span>${files}</span>` +
-    `<span class="dv-stat dv-stat-add">+${rendered.additions}</span>` +
-    `<span class="dv-stat dv-stat-del">−${rendered.deletions}</span>`
-  );
-}
-
-const REVIEW_BAR =
-  '<div id="mdv-review" class="mdv-review-bar" hidden>' +
-  '<span class="mdv-review-count"></span>' +
-  '<button type="button" class="mdv-review-copy">Copy review</button>' +
-  '</div>';
-
-/**
- * Build the whole page as one self-contained document: the stylesheets and
- * scripts are inlined, so nothing is fetched after this response and the
- * server is free to leave.
- */
-async function buildPage(source, options) {
-  const rendered = renderDiff(source);
-  const title = options.title || defaultTitle(source, options.file);
-
-  const [base, diffCss, reviewJs, diffJs] = await Promise.all([
-    fsp.readFile(path.join(HERE, 'assets/style.css'), 'utf8'),
-    fsp.readFile(path.join(HERE, 'assets/diff.css'), 'utf8'),
-    fsp.readFile(path.join(HERE, 'assets/review.js'), 'utf8'),
-    fsp.readFile(path.join(HERE, 'assets/diff.js'), 'utf8'),
-  ]);
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(title)}</title>
-<style>
-${base}
-${diffCss}</style>
-</head>
-<body>
-<div id="mdv-root" class="dv-root" data-file="${escapeHtml(title)}">
-<div class="dv-toolbar">
-<div class="mdv-path">${escapeHtml(title)}</div>
-<div class="dv-summary">${summary(rendered)}</div>
-<label class="dv-layout-toggle"><input type="checkbox" id="dv-layout"> Side by side</label>
-</div>
-<article id="mdv-content">
-${rendered.html}
-</article>
-</div>
-${REVIEW_BAR}
-<script>
-${reviewJs}</script>
-<script>
-${diffJs}</script>
-</body>
-</html>
-`;
 }
 
 // ---------------------------------------------------------------------------
@@ -363,7 +299,9 @@ async function main() {
     console.error('diff-viewer: this does not look like a unified diff; showing it anyway.');
   }
 
-  const document = await buildPage(source, options);
+  const document = await buildDiffPage(source, {
+    title: options.title || defaultTitle(source, options.file),
+  });
   if (options.output) {
     await writeStandalone(document, options);
   } else {

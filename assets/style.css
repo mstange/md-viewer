@@ -299,6 +299,22 @@ body {
   border-radius: 6px;
 }
 
+/* A commit id the repository has: still a code span, now worth clicking. The
+   link colour goes on the code itself, since the <a> only wraps it. */
+#mdv-content a.mdv-commit {
+  text-decoration: none;
+}
+
+#mdv-content a.mdv-commit code {
+  color: var(--link);
+  background: color-mix(in srgb, var(--link) 12%, transparent);
+}
+
+#mdv-content a.mdv-commit:hover code {
+  background: color-mix(in srgb, var(--link) 22%, transparent);
+  text-decoration: underline;
+}
+
 #mdv-content pre {
   position: relative;
   padding: 1rem;

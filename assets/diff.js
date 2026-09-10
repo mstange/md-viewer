@@ -120,7 +120,17 @@
   // ---------------------------------------------------------------------------
 
   window.mdvReviewPrompt = function (comments) {
-    var out = ['Please address these review comments on the following diff:', ''];
+    // Name the commit when the page is one. A reviewer reading a stack opens a
+    // tab per sha and pastes each review somewhere else; without the id in the
+    // text, two of these are indistinguishable once they leave the page — and
+    // the sha is also what the receiving end needs in order to check out the
+    // change being talked about.
+    var sha = root.dataset.commit;
+    var subject = root.dataset.subject;
+    var what = sha
+      ? 'commit ' + sha + (subject ? ' (' + subject + ')' : '')
+      : 'the following diff';
+    var out = ['Please address these review comments on ' + what + ':', ''];
     for (var i = 0; i < comments.length; i++) {
       var comment = comments[i];
       var place = comment.place || {};

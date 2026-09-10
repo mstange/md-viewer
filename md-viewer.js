@@ -14,9 +14,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { renderMarkdown } from './lib/render.js';
+import { renderMarkdown, findShaCandidates } from './lib/render.js';
 import { openBrowser } from './lib/browser.js';
 import { looksLikeDiff } from './lib/diff.js';
+import { buildDiffPage } from './lib/diff-page.js';
+import { openRepository } from './lib/git.js';
 import { parseRemoteTarget, readRemoteFile, startRemoteViewer } from './lib/remote.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -170,8 +172,39 @@ const escapeHtml = (text) =>
 
 async function renderFile(file, linkMode) {
   const source = await fsp.readFile(file, 'utf8');
-  const { html, title } = renderMarkdown(source, { baseDir: path.dirname(file), linkMode });
+  // A commit id in the text is only worth linking if the repository around the
+  // document really has that commit, which is a question for git and so cannot
+  // be asked from inside the synchronous renderer. Every candidate in the file
+  // is resolved here first, in one batch, and the answers are handed in.
+  const commits = linkMode === 'server' ? repositoryFor(file) : null;
+  if (commits) {
+    await commits.resolve(findShaCandidates(source));
+  }
+  const { html, title } = renderMarkdown(source, {
+    baseDir: path.dirname(file),
+    linkMode,
+    commits,
+  });
   return { html, title: tabTitle(title, file) };
+}
+
+/** @type {Map<string, ReturnType<typeof openRepository>>} */
+const repositories = new Map();
+
+/**
+ * The commit lookup for a document, kept for the life of the process so that
+ * the shas of a file being re-rendered on every save are only resolved once.
+ *
+ * Keyed on the resolved path, which is also how a commit link is looked up
+ * again when it comes back: the two have to agree, or a link points at a
+ * document the map has never heard of.
+ */
+function repositoryFor(file) {
+  const key = path.resolve(file);
+  if (!repositories.has(key)) {
+    repositories.set(key, openRepository(key));
+  }
+  return repositories.get(key);
 }
 
 /**
@@ -506,6 +539,9 @@ function serve(initialFile, options) {
         saidGoodbye = true;
         scheduleExit('page said goodbye');
         return;
+      case '/_commit':
+        await handleCommit(res, url);
+        return;
       case '/_file':
         await handleRawFile(res, url);
         return;
@@ -582,6 +618,48 @@ function serve(initialFile, options) {
     };
     req.on('close', drop);
     res.on('error', drop);
+  }
+
+  /**
+   * One commit of the document's repository, as a diff review page.
+   *
+   * The same self-contained page diff-viewer serves, for the same reason: a
+   * commit cannot change, so once the tab has it, it needs nothing more from
+   * this process — and it keeps working after md-viewer has exited.
+   *
+   * Which repository is decided by the document the link came from, not by the
+   * sha: a sha names a commit only relative to a checkout, and the server can
+   * be showing files from several. The link carries the document's path, and
+   * only paths whose commit lookup was already built for a rendered document
+   * are honoured — so this cannot be pointed at an arbitrary repository.
+   */
+  async function handleCommit(res, url) {
+    const sha = url.searchParams.get('sha') || '';
+    const file = url.searchParams.get('f');
+    const commits = file ? repositories.get(path.resolve(file)) : null;
+    if (!commits || !commits.has(sha)) {
+      send(res, 404, MIME['.txt'], 'no such commit\n');
+      return;
+    }
+    try {
+      const [patch, subject] = await Promise.all([commits.show(sha), commits.subject(sha)]);
+      const full = commits.full(sha);
+      send(
+        res,
+        200,
+        MIME['.html'],
+        await buildDiffPage(patch, {
+          // The short form in the heading, since that is what the document
+          // said and what the reader recognises; the full sha goes in the
+          // page's identity, where a copied review will pick it up.
+          title: sha,
+          subtitle: subject,
+          commit: full,
+        }),
+      );
+    } catch (error) {
+      send(res, 500, MIME['.txt'], `cannot show ${sha}: ${error.message}\n`);
+    }
   }
 
   async function handleRawFile(res, url) {
