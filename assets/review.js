@@ -349,7 +349,23 @@
 
   function closeBox() {
     var box = document.querySelector('.mdv-review-box');
-    if (box) box.remove();
+    if (!box) return;
+    // The box may have left a listener waiting for the reader to start typing.
+    if (box.mdvStopAwaitingTyping) box.mdvStopAwaitingTyping();
+    box.remove();
+  }
+
+  /**
+   * Drop the open box and, if it was a comment being written rather than one
+   * being edited, the highlight it was about. Escape reaches here from the
+   * document as well as the textarea, since a box opened by a selection does
+   * not hold the focus until the reader types.
+   */
+  function cancelBox() {
+    var box = document.querySelector('.mdv-review-box');
+    if (!box) return;
+    if (!box.dataset.commentId) discardPending();
+    closeBox();
   }
 
   /** Save whatever is in the open box, then close it. */
@@ -374,7 +390,7 @@
     closeBox();
   }
 
-  function openBox(anchorElement, id) {
+  function openBox(anchorElement, id, keepSelection) {
     var open = document.querySelector('.mdv-review-box');
     if (open && open.dataset.commentId === id) {
       open.querySelector('textarea').focus();
@@ -412,11 +428,45 @@
         commitBox();
       } else if (event.key === 'Escape') {
         event.preventDefault();
-        if (!id) discardPending();
-        closeBox();
+        cancelBox();
       }
     });
-    textarea.focus();
+    // Focusing a text control collapses the document selection into it, which
+    // would take back the words the reader just selected. A box opened by a
+    // fresh selection waits instead: typing moves the focus in, so the reader
+    // can copy the passage or write about it without choosing up front.
+    if (keepSelection) awaitTyping(box, textarea);
+    else textarea.focus();
+  }
+
+  /**
+   * Hand the box the focus at the first keystroke meant for it. Until then the
+   * selection stays with the document, so the reader can still copy it.
+   *
+   * The keydown is not consumed: focusing during it moves the textarea into
+   * place before the character is committed, so the letter that started the
+   * typing arrives on its own and nothing has to be replayed.
+   */
+  function awaitTyping(box, textarea) {
+    function stop() {
+      box.mdvStopAwaitingTyping = null;
+      document.removeEventListener('keydown', onKeyDown, true);
+    }
+    function onKeyDown(event) {
+      if (document.activeElement === textarea) return;
+      // A shortcut belongs to the browser, and copying the selection is the
+      // whole reason the focus is still out here.
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      // Escape and the arrows are handled elsewhere, and Enter on an empty box
+      // would mean nothing; a character is what says the reader is writing.
+      if (event.key.length !== 1) return;
+      stop();
+      textarea.focus();
+    }
+    // Closing the box takes the listener with it, so selecting many passages
+    // in turn does not leave one behind for each.
+    box.mdvStopAwaitingTyping = stop;
+    document.addEventListener('keydown', onKeyDown, true);
   }
 
   // ---------------------------------------------------------------------------
@@ -527,6 +577,10 @@
     if (element.closest('.mdv-review-box, .mdv-review-bar, mark.mdv-mark[data-comment-id]')) {
       return;
     }
+    // Highlighting puts the selection back over the marks it just made, which
+    // fires selectionchange again. Recognising our own handiwork stops it here
+    // rather than discarding the pending comment and wrapping it a second time.
+    if (isPendingSelection(range)) return;
 
     discardPending();
     // Unwrapping the old provisional mark rebuilt the text nodes the selection
@@ -550,10 +604,38 @@
     for (var i = 0; i < marks.length; i++) {
       marks[i].classList.add('mdv-mark-pending');
     }
-    selection.removeAllRanges();
-
     closeBox();
-    if (marks.length) openBox(marks[0], null);
+    if (marks.length) openBox(marks[0], null, true);
+    // After the box, not before, so that anything it does to the focus has
+    // already happened by the time the selection goes back.
+    reselect(selection, marks);
+  }
+
+  /** Does the range cover exactly the marks the last selection produced? */
+  function isPendingSelection(range) {
+    var marks = article.querySelectorAll('mark.mdv-mark-pending');
+    if (!marks.length) return false;
+    var test = document.createRange();
+    test.setStartBefore(marks[0]);
+    test.setEndAfter(marks[marks.length - 1]);
+    return (
+      range.compareBoundaryPoints(Range.START_TO_START, test) === 0 &&
+      range.compareBoundaryPoints(Range.END_TO_END, test) === 0
+    );
+  }
+
+  /**
+   * Wrapping the text in marks rebuilt the nodes the selection pointed into,
+   * which leaves it anchored to text that is no longer in the document. Put it
+   * back over the marks so the reader can still copy what they just selected.
+   */
+  function reselect(selection, marks) {
+    selection.removeAllRanges();
+    if (!marks.length) return;
+    var range = document.createRange();
+    range.setStartBefore(marks[0]);
+    range.setEndAfter(marks[marks.length - 1]);
+    selection.addRange(range);
   }
 
   // ---------------------------------------------------------------------------
@@ -619,7 +701,7 @@
     }
   });
   document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape') closeBox();
+    if (event.key === 'Escape') cancelBox();
   });
 
   render();

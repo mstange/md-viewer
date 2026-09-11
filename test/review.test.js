@@ -230,13 +230,21 @@ test('unified reads every line, since it has only one column', async () => {
   assert.match(quoted, /writes off the main thread/);
 });
 
+/** Select the whole of one paragraph, the way dragging across it does. */
+async function selectParagraph(window, index) {
+  const d = window.document;
+  const range = d.createRange();
+  range.selectNodeContents(d.querySelectorAll('#mdv-content p')[index].firstChild);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  d.dispatchEvent(new window.Event('selectionchange'));
+  // Selections have to hold still before the comment box opens.
+  await new Promise((resolve) => window.setTimeout(resolve, 400));
+}
 
-/**
- * A markdown document has no columns and no hooks, so review mode there is the
- * plain case: the whole article is one text, and a comment quotes what was
- * selected. This is the behaviour the diff work had to leave alone.
- */
-test('a markdown document quotes the selection, as it always did', async () => {
+/** The markdown page, the plainest thing review mode runs on. */
+async function markdownPage() {
   const review = await fsp.readFile(path.join(ROOT, 'assets', 'review.js'), 'utf8');
   const dom = new JSDOM(
     '<div id="mdv-root" data-file="notes.md"><article id="mdv-content">' +
@@ -248,16 +256,25 @@ test('a markdown document quotes the selection, as it always did', async () => {
       `<script>${review}<\/script>`,
     { runScripts: 'dangerously' }
   );
-  const { window } = dom;
+  return dom.window;
+}
+
+/** Press a key on the document, as a reader who has not clicked anything does. */
+const press = (window, key, init) =>
+  window.document.dispatchEvent(
+    new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+  );
+
+/**
+ * A markdown document has no columns and no hooks, so review mode there is the
+ * plain case: the whole article is one text, and a comment quotes what was
+ * selected. This is the behaviour the diff work had to leave alone.
+ */
+test('a markdown document quotes the selection, as it always did', async () => {
+  const window = await markdownPage();
   const d = window.document;
 
-  const range = d.createRange();
-  range.selectNodeContents(d.querySelectorAll('#mdv-content p')[1].firstChild);
-  const selection = window.getSelection();
-  selection.removeAllRanges();
-  selection.addRange(range);
-  d.dispatchEvent(new window.Event('selectionchange'));
-  await new Promise((resolve) => window.setTimeout(resolve, 400));
+  await selectParagraph(window, 1);
 
   const textarea = d.querySelector('.mdv-review-box textarea');
   assert.ok(textarea, 'a comment box should be open');
@@ -272,4 +289,100 @@ test('a markdown document quotes the selection, as it always did', async () => {
   assert.match(copied, /review comments on notes\.md/);
   assert.match(copied, /— "The second paragraph\."/);
   assert.match(copied, /say which one/);
+});
+
+test('the selection stays put when the comment box opens, so it can be copied', async () => {
+  const window = await markdownPage();
+
+  await selectParagraph(window, 1);
+
+  assert.ok(window.document.querySelector('.mdv-review-box'), 'a comment box should be open');
+  assert.equal(
+    window.getSelection().toString(),
+    'The second paragraph.',
+    'the reader should still be able to copy what they selected'
+  );
+  assert.notEqual(
+    window.document.activeElement.nodeName,
+    'TEXTAREA',
+    'the box should not have taken the focus, which would collapse the selection'
+  );
+});
+
+test('typing hands the focus to the comment box, which is what typing meant', async () => {
+  const window = await markdownPage();
+
+  await selectParagraph(window, 1);
+  press(window, 'a');
+
+  assert.equal(window.document.activeElement.nodeName, 'TEXTAREA');
+});
+
+test('escape cancels the comment even though the box never took the focus', async () => {
+  const window = await markdownPage();
+  const d = window.document;
+
+  await selectParagraph(window, 1);
+  press(window, 'Escape');
+
+  assert.equal(d.querySelector('.mdv-review-box'), null, 'the box should be gone');
+  assert.equal(
+    d.querySelectorAll('mark.mdv-mark').length,
+    0,
+    'the highlight should go with it, rather than being left behind'
+  );
+});
+
+test('escape keeps a comment already saved, having only closed its box', async () => {
+  const window = await markdownPage();
+  const d = window.document;
+
+  await selectParagraph(window, 1);
+  press(window, 'a');
+  const textarea = d.querySelector('.mdv-review-box textarea');
+  textarea.value = 'say which one';
+  textarea.dispatchEvent(
+    new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+  );
+
+  d.querySelector('mark.mdv-mark').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  press(window, 'Escape');
+
+  assert.equal(d.querySelector('.mdv-review-box'), null);
+  assert.equal(d.querySelectorAll('mark.mdv-mark').length, 1, 'the comment should still be there');
+});
+
+test('a box that closes takes its waiting-to-type listener with it', async () => {
+  const window = await markdownPage();
+  const d = window.document;
+
+  // Only the capturing keydown listener is the one that waits for typing.
+  let live = 0;
+  const add = d.addEventListener.bind(d);
+  const remove = d.removeEventListener.bind(d);
+  d.addEventListener = (type, fn, capture) => {
+    if (type === 'keydown' && capture === true) live++;
+    return add(type, fn, capture);
+  };
+  d.removeEventListener = (type, fn, capture) => {
+    if (type === 'keydown' && capture === true) live--;
+    return remove(type, fn, capture);
+  };
+
+  for (let i = 0; i < 3; i++) {
+    await selectParagraph(window, i % 2);
+    press(window, 'Escape');
+  }
+
+  assert.equal(live, 0, 'selecting again and again should not pile up listeners');
+});
+
+test('a copy shortcut leaves the selection alone, since copying is why it is there', async () => {
+  const window = await markdownPage();
+
+  await selectParagraph(window, 1);
+  press(window, 'c', { metaKey: true });
+
+  assert.notEqual(window.document.activeElement.nodeName, 'TEXTAREA');
+  assert.equal(window.getSelection().toString(), 'The second paragraph.');
 });
