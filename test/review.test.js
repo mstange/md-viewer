@@ -386,3 +386,67 @@ test('a copy shortcut leaves the selection alone, since copying is why it is the
   assert.notEqual(window.document.activeElement.nodeName, 'TEXTAREA');
   assert.equal(window.getSelection().toString(), 'The second paragraph.');
 });
+
+/**
+ * Pasting is the other way a comment gets written, and it used to be lost: the
+ * focus was still on the document, where a paste has nowhere to go, because the
+ * wait-for-typing rule refused every keystroke carrying a modifier.
+ */
+test('a paste hands the focus to the box, since pasting is also writing', async () => {
+  const window = await markdownPage();
+
+  await selectParagraph(window, 1);
+  press(window, 'v', { metaKey: true });
+
+  assert.equal(
+    window.document.activeElement.nodeName,
+    'TEXTAREA',
+    'the text being pasted has to land somewhere'
+  );
+});
+
+test('Ctrl+V pastes too, for a keyboard that says Ctrl', async () => {
+  const window = await markdownPage();
+
+  await selectParagraph(window, 1);
+  press(window, 'v', { ctrlKey: true });
+
+  assert.equal(window.document.activeElement.nodeName, 'TEXTAREA');
+});
+
+test('AltGr+V is a letter on the layouts that write one', async () => {
+  const window = await markdownPage();
+
+  await selectParagraph(window, 1);
+  // Windows reports AltGr as Ctrl+Alt, so this pair is not a paste shortcut.
+  // The letter it produces arrives as its own keydown, which does focus the box.
+  press(window, 'v', { ctrlKey: true, altKey: true });
+
+  assert.notEqual(window.document.activeElement.nodeName, 'TEXTAREA');
+});
+
+test('the focus moves before the paste, so the pasted text is the comment', async () => {
+  const window = await markdownPage();
+  const d = window.document;
+
+  await selectParagraph(window, 1);
+  // The keydown is not consumed, so the paste that follows it is delivered
+  // normally — by which time the textarea is where it goes.
+  press(window, 'v', { metaKey: true });
+
+  const textarea = d.querySelector('.mdv-review-box textarea');
+  const pasted = new window.Event('paste', { bubbles: true, cancelable: true });
+  d.activeElement.dispatchEvent(pasted);
+  assert.equal(pasted.target, textarea, 'the paste should be aimed at the comment box');
+
+  // jsdom carries no clipboard, so stand in for what the browser would insert.
+  textarea.value = 'pasted words';
+  textarea.dispatchEvent(
+    new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+  );
+
+  let copied = null;
+  window.navigator.clipboard = { writeText: (text) => ((copied = text), Promise.resolve()) };
+  d.querySelector('.mdv-review-copy').click();
+  assert.match(copied, /pasted words/);
+});

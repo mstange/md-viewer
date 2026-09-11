@@ -440,12 +440,28 @@
   }
 
   /**
+   * True for the keystroke that pastes: Cmd+V or Ctrl+V, whichever this
+   * platform means by it. Both are accepted rather than sniffing the platform,
+   * because no platform binds either one to something that is not a paste.
+   *
+   * Ctrl+Alt is refused, since that is how a Windows keyboard writes AltGr: on
+   * a layout where AltGr+V is a letter, it is a letter. Cmd+Alt+V is a paste
+   * (the mac's paste-and-match-style), so Alt only disqualifies the Ctrl form.
+   */
+  function isPaste(event) {
+    if (event.key !== 'v' && event.key !== 'V') return false;
+    if (event.metaKey) return true;
+    return event.ctrlKey && !event.altKey;
+  }
+
+  /**
    * Hand the box the focus at the first keystroke meant for it. Until then the
    * selection stays with the document, so the reader can still copy it.
    *
    * The keydown is not consumed: focusing during it moves the textarea into
-   * place before the character is committed, so the letter that started the
-   * typing arrives on its own and nothing has to be replayed.
+   * place before the keystroke is acted on, so the letter that started the
+   * typing — or the text a Cmd+V is about to paste — arrives on its own and
+   * nothing has to be replayed.
    */
   function awaitTyping(box, textarea) {
     function stop() {
@@ -454,12 +470,18 @@
     }
     function onKeyDown(event) {
       if (document.activeElement === textarea) return;
-      // A shortcut belongs to the browser, and copying the selection is the
-      // whole reason the focus is still out here.
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      // Escape and the arrows are handled elsewhere, and Enter on an empty box
-      // would mean nothing; a character is what says the reader is writing.
-      if (event.key.length !== 1) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        // A shortcut belongs to the browser, and copying the selection is the
+        // whole reason the focus is still out here — except paste, which says
+        // the reader is writing just as plainly as a letter does, and which has
+        // nowhere to go while the focus is still on the document.
+        if (!isPaste(event)) return;
+      } else if (event.key.length !== 1) {
+        // Escape and the arrows are handled elsewhere, and Enter on an empty
+        // box would mean nothing; a character is what says the reader is
+        // writing.
+        return;
+      }
       stop();
       textarea.focus();
     }
