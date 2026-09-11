@@ -14,11 +14,12 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { renderMarkdown, findShaCandidates } from './lib/render.js';
+import { renderMarkdown, findShaCandidates, findDocCandidates } from './lib/render.js';
 import { openBrowser } from './lib/browser.js';
 import { looksLikeDiff } from './lib/diff.js';
 import { buildDiffPage } from './lib/diff-page.js';
 import { openRepository } from './lib/git.js';
+import { openDocuments } from './lib/docs.js';
 import { parseRemoteTarget, readRemoteFile, startRemoteViewer } from './lib/remote.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -172,18 +173,24 @@ const escapeHtml = (text) =>
 
 async function renderFile(file, linkMode) {
   const source = await fsp.readFile(file, 'utf8');
-  // A commit id in the text is only worth linking if the repository around the
-  // document really has that commit, which is a question for git and so cannot
-  // be asked from inside the synchronous renderer. Every candidate in the file
-  // is resolved here first, in one batch, and the answers are handed in.
-  const commits = linkMode === 'server' ? repositoryFor(file) : null;
-  if (commits) {
-    await commits.resolve(findShaCandidates(source));
-  }
+  // A commit id is only worth linking if the repository around the document
+  // really has that commit, and a path only if the file is really on disk.
+  // Both are questions for something outside the renderer, which is
+  // synchronous, so every candidate in the file is resolved here first — in one
+  // batch each — and the renderer is handed only the answers. Neither applies
+  // to a standalone file, which has no viewer behind it to link to.
+  const onServer = linkMode === 'server';
+  const commits = onServer ? repositoryFor(file) : null;
+  const docs = onServer ? openDocuments(file) : null;
+  await Promise.all([
+    commits?.resolve(findShaCandidates(source)),
+    docs?.resolve(findDocCandidates(source)),
+  ]);
   const { html, title } = renderMarkdown(source, {
     baseDir: path.dirname(file),
     linkMode,
     commits,
+    docs,
   });
   return { html, title: tabTitle(title, file) };
 }

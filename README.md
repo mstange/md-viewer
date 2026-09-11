@@ -138,6 +138,29 @@ commented on like any line of code — a claim in a message can be wrong when
 every line of the diff is right. Such a comment names the message rather than a
 file, and is quoted as prose rather than as a patch.
 
+## File links
+
+A markdown file named in backticks becomes a link to that file, opened in a new
+tab, so a document that points at other documents is navigable without anyone
+having written those links by hand:
+
+| file | what it covers |
+| --- | --- |
+| `README.md` | the whole tool |
+| `docs/architecture.md` | why the renderer is synchronous |
+
+The path is resolved beside the file being viewed first, then from the root of
+the repository around it — the two ways a path is actually written down, one
+from a sibling reference and one copied out of a `git` command or a build log.
+A path that starts with `./` or `../` is only read relative to the document,
+since it already says where to start from.
+
+As with a commit id, only a code span holding nothing but the path counts, and
+only a file really on the disk becomes a link: a name that is a plan rather
+than a file, a glob, a URL, or a path to something that is not markdown is left
+as the code span it was. A document does not link to itself. Nothing is cached,
+so a file written after the page was opened is a link on the next save.
+
 ## Review comments
 
 Select text in the preview and a box opens to comment on it. `Enter` saves,

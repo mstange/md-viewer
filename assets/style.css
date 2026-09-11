@@ -299,18 +299,24 @@ body {
   border-radius: 6px;
 }
 
-/* A commit id the repository has: still a code span, now worth clicking. The
-   link colour goes on the code itself, since the <a> only wraps it. */
-#mdv-content a.mdv-commit {
+/* A commit id the repository has, or a markdown file that is really on disk:
+   still a code span, now worth clicking. The link colour goes on the code
+   itself, since the <a> only wraps it. Both get the same treatment — what the
+   reader needs to see is that the span leads somewhere, and the text already
+   says whether that is a sha or a file. */
+#mdv-content a.mdv-commit,
+#mdv-content a.mdv-doc {
   text-decoration: none;
 }
 
-#mdv-content a.mdv-commit code {
+#mdv-content a.mdv-commit code,
+#mdv-content a.mdv-doc code {
   color: var(--link);
   background: color-mix(in srgb, var(--link) 12%, transparent);
 }
 
-#mdv-content a.mdv-commit:hover code {
+#mdv-content a.mdv-commit:hover code,
+#mdv-content a.mdv-doc:hover code {
   background: color-mix(in srgb, var(--link) 22%, transparent);
   text-decoration: underline;
 }
