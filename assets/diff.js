@@ -229,7 +229,18 @@
     var what = sha
       ? 'commit ' + sha + (subject ? ' (' + subject + ')' : '')
       : 'the following diff';
-    var out = ['Please address these review comments on ' + what + ':', ''];
+    return ['Please address these review comments on ' + what + ':', '', entries(comments)].join('\n');
+  };
+
+  /**
+   * The comments as the entries of a review, without the line that says what
+   * the review is of. A page holding several of these pages writes that line
+   * itself, once, and then a heading per commit above each commit's entries.
+   */
+  window.mdvReviewEntries = entries;
+
+  function entries(comments) {
+    var out = [];
     for (var i = 0; i < comments.length; i++) {
       var comment = comments[i];
       var place = comment.place || {};
@@ -286,5 +297,5 @@
       out.push('');
     }
     return out.join('\n');
-  };
+  }
 })();

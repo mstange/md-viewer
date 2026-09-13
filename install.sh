@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Symlink md-viewer and diff-viewer into ~/.local/bin.
+# Symlink md-viewer, diff-viewer and stack-viewer into ~/.local/bin.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bindir="${MD_VIEWER_BINDIR:-$HOME/.local/bin}"
-tools=(md-viewer diff-viewer)
+tools=(md-viewer diff-viewer stack-viewer)
 
 if [[ "${1:-}" == "--uninstall" ]]; then
   for tool in "${tools[@]}"; do
