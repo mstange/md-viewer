@@ -67,14 +67,19 @@ function source(body, side) {
 }
 
 /**
- * Each side of the rendered diff has to hold exactly the lines the patch put
- * there, in that order. The two sides are checked separately because a diff
- * interleaves them — a deletion is drawn beside the insertion that replaced it,
- * not after every deletion in the run — so the order that matters is the order
- * within each side.
+ * The rendered diff has to hold exactly the changed lines the patch has, in
+ * the order the patch has them: a run's deletions, then its insertions. The
+ * markup used to interleave the two — a deletion beside the insertion that
+ * replaced it — and unified, which shows the markup as it is, read two
+ * functions shuffled together line by line.
  */
 function assertFaithful(body, label) {
   const rows = rendered(body);
+  assert.deepEqual(
+    rows.map((row) => row.side + row.text),
+    body.split('\n').filter((line) => line[0] === '-' || line[0] === '+'),
+    label,
+  );
   for (const side of ['-', '+']) {
     assert.deepEqual(
       rows.filter((row) => row.side === side).map((row) => row.text),
@@ -149,7 +154,7 @@ test('fuzzed runs keep every line, once and in order', () => {
 // ---------------------------------------------------------------------------
 
 test('a line changed only by whitespace says so', async (t) => {
-  const marked = (body) => renderDiff(patch(body)).html.includes('dv-row-space');
+  const marked = (body) => renderDiff(patch(body)).html.includes('dv-line-space');
   const cases = [
     ['spaces around an operator', '-const v = f(a);\n+const v  =  f(a);', true],
     ['indent respaced to a tab', '-    x = 1;\n+' + TAB + 'x = 1;', true],

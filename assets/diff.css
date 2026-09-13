@@ -210,14 +210,14 @@
 }
 
 /* Whitespace-only changes: the point of the line is what you cannot see, so
-   the changed runs spell their spaces out and the row says why it is here. */
-.dv-row-space .dv-word {
+   the changed runs spell their spaces out and the line says why it is here. */
+.dv-line-space .dv-word {
   background: var(--dv-space-bg);
   outline: 1px solid var(--dv-space);
   color: var(--dv-space);
 }
 
-.dv-row-space .dv-text::after {
+.dv-line-space .dv-text::after {
   content: "whitespace";
   float: right;
   margin-left: 1em;
@@ -318,12 +318,33 @@
   color: var(--fg);
 }
 
-/* Side by side: deletions left, insertions right, each pair on one line. */
+/* Side by side: deletions left, insertions right, each pair on one row.
 
-.dv-split .dv-row-change,
+   A run of changes is one block holding its deletions and then its insertions,
+   in patch order. Here the block is a grid, and each line is placed on the row
+   the renderer paired it into — `--dv-row` — so a deletion and the insertion
+   that replaced it meet on one row however far either of them wraps. A line
+   with no counterpart leaves its half of the row to the block's own
+   background, so the two sides do not slide out of step. */
+
+.dv-split .dv-block,
 .dv-split .dv-row-context {
   display: grid;
   grid-template-columns: 1fr 1fr;
+}
+
+.dv-split .dv-block {
+  background: color-mix(in srgb, var(--bg-subtle) 50%, var(--bg));
+}
+
+.dv-split .dv-block .dv-line-del {
+  grid-column: 1;
+  grid-row: var(--dv-row);
+}
+
+.dv-split .dv-block .dv-line-add {
+  grid-column: 2;
+  grid-row: var(--dv-row);
 }
 
 .dv-split .dv-line {
@@ -348,27 +369,6 @@
 .dv-split .dv-line-add,
 .dv-split .dv-line-mirror {
   border-left: 1px solid var(--border);
-}
-
-/* A line with no counterpart still leaves its half of the row, so the two
-   sides do not slide out of step. */
-.dv-split .dv-row-del .dv-line-del {
-  grid-column: 1;
-}
-
-.dv-split .dv-row-add .dv-line-add {
-  grid-column: 2;
-}
-
-.dv-split .dv-row-del::after,
-.dv-split .dv-row-add::before {
-  content: "";
-  background: var(--bg-subtle);
-  opacity: 0.5;
-}
-
-.dv-split .dv-row-add::before {
-  grid-column: 1;
 }
 
 /* Unified shows an unchanged line once, so the mirrored copy is dropped and

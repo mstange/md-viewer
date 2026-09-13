@@ -349,7 +349,10 @@ Only commits with comments are listed, so a commit that was fine leaves no
 trace in the review.
 
 The commits are read from the repository's git store with `git show`, since jj
-keeps every commit there, the snapshotted working copy included. The listing
+keeps every commit there, the snapshotted working copy included. They are
+diffed with git's patience algorithm, which anchors on lines unique to both
+sides and so agrees with what `jj show` prints, where git's default is apt to
+delete a whole function and add two. The listing
 itself comes from `jj log`, which snapshots the working copy first, so a stack
 that ends at `@` shows what is on disk now. As with `diff-viewer`, the page is
 self-contained and the command exits shortly after the browser has loaded it.

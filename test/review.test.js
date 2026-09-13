@@ -124,12 +124,12 @@ async function page(source = PATCH) {
 test('a selection down the new column quotes the new column only', async () => {
   const p = await page();
   p.split();
-  // The renderer pairs each deletion with the insertion that replaced it, so
-  // the markup runs del, add, del, add, add, add, add. The reader drags down
-  // the right column from the first insertion to the last, and the second
-  // deletion sits between them.
-  assert.deepEqual([3, 4, 5, 6, 7, 8, 9].map(p.marker), ['-', '+', '-', '+', '+', '+', '+']);
-  await p.select(4, 9);
+  // The markup runs in patch order: del, del, add, add, add, add, add. The
+  // reader drags down the right column from the first insertion to the last;
+  // within one run that stays in the right column, and the deletions are what
+  // the drag must not pick up when a run's insertions follow them.
+  assert.deepEqual([3, 4, 5, 6, 7, 8, 9].map(p.marker), ['-', '-', '+', '+', '+', '+', '+']);
+  await p.select(5, 9);
   p.comment('this is abusing a bug of the pref service');
 
   const prompt = p.prompt();
@@ -149,7 +149,7 @@ test('a selection down the new column quotes the new column only', async () => {
 test('the quoted diff covers every line the comment was written on', async () => {
   const p = await page();
   p.split();
-  await p.select(4, 9);
+  await p.select(5, 9);
   p.comment('why');
 
   const quoted = p.prompt().split('```diff')[1].split('```')[0];
@@ -166,7 +166,7 @@ test('the quoted diff covers every line the comment was written on', async () =>
 test('the quoted diff reads as a patch does, both sides in order', async () => {
   const p = await page();
   p.split();
-  await p.select(4, 4);
+  await p.select(5, 5);
   p.comment('why');
 
   const quoted = p.prompt().split('```diff')[1].split('```')[0];
@@ -182,7 +182,7 @@ test('the quoted diff reads as a patch does, both sides in order', async () => {
 test('a comment on several lines names them instead of running them together', async () => {
   const p = await page();
   p.split();
-  await p.select(4, 9);
+  await p.select(5, 9);
   p.comment('why');
 
   const header = p.prompt().split('\n').find((line) => line.startsWith('- '));
@@ -194,7 +194,7 @@ test('a comment on several lines names them instead of running them together', a
 test('a comment within one line still quotes the words it is about', async () => {
   const p = await page();
   p.split();
-  await p.select(4, 4);
+  await p.select(5, 5);
   p.comment('why');
 
   const header = p.prompt().split('\n').find((line) => line.startsWith('- '));
@@ -204,7 +204,7 @@ test('a comment within one line still quotes the words it is about', async () =>
 test('a comment survives a live reload of the same diff', async () => {
   const p = await page();
   p.split();
-  await p.select(4, 9);
+  await p.select(5, 9);
   p.comment('why');
   const before = p.prompt();
 
