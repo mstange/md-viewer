@@ -11,10 +11,11 @@ Save the file and the tab updates in place, keeping your scroll position. Close
 the tab and `md-viewer` exits, giving you back your shell.
 
 Its companion `diff-viewer` shows a diff the same way, to comment on and hand
-back to an agent:
+back to an agent, and `stack-viewer` does the same for a series of commits:
 
 ```
 git diff | diff-viewer
+stack-viewer lqs::tvz
 ```
 
 ## Install
@@ -24,14 +25,15 @@ npm install
 ./install.sh
 ```
 
-That symlinks both commands into `~/.local/bin`. Use
+That symlinks the three commands into `~/.local/bin`. Use
 `./install.sh --uninstall` to remove the symlink, or set `MD_VIEWER_BINDIR` to
 link somewhere else.
 
 Requires Node 20.11 or newer.
 
-`npm test` runs the diff renderer's tests: no dependencies beyond the ones
-above, since they read the rendered HTML directly.
+`npm test` runs the tests: no dependencies beyond the ones above, since they
+read the rendered HTML directly. The `stack-viewer` tests build throwaway
+repositories, and skip the jj ones when `jj` is not installed.
 
 ## Usage
 
@@ -58,6 +60,7 @@ Environment variables:
 | `MD_VIEWER_DEBUG`    | Log why and when the server decides to exit.  |
 | `MD_VIEWER_BUG_URL`  | Where a bug named in a commit message links, with `{id}` for the number. |
 | `DIFF_VIEWER_PORT`   | Default port for `diff-viewer`.               |
+| `STACK_VIEWER_PORT`  | Default port for `stack-viewer`.              |
 | `MD_VIEWER_REMOTE_CMD` | Path to `md-viewer` on the remote host.     |
 
 ## Files on another machine
@@ -288,6 +291,70 @@ and scripts inlined, and the command exits a few seconds after the browser stops
 asking for it. Reloading the tab keeps it alive that bit longer; once it has
 gone, the tab still works, since comments were always page-local and copying
 them out needs nothing from the process that served them.
+
+## Reviewing a stack of commits
+
+`stack-viewer` shows a series of commits in one tab, each as the review page
+`diff-viewer` would show for that commit alone. It names the stack the way jj
+does, by revset:
+
+```
+stack-viewer lqs::tvz
+stack-viewer -R ~/src/firefox 'trunk()..@'
+```
+
+The repository is the jj repository around the current directory, or the one
+`-R` names. In a plain git checkout the argument is a git range such as
+`main..HEAD`, or a single commit.
+
+```
+stack-viewer [options] <revset>
+
+  -R, --repo <dir>  The repository to read from. Defaults to the one around
+                    the current directory.
+  -o, --output <f>  Write a standalone HTML file instead of serving it.
+  -p, --port <n>    Listen on this port instead of a random free one.
+      --no-open     Print the URL instead of launching a browser.
+  -h, --help        Show help.
+  -v, --version     Show the version.
+```
+
+A list down the left names the commits oldest first, by change id and subject,
+with the lines each adds and removes. Click one to read it, or step through
+them with `Alt+↑` and `Alt+↓`; `Alt+L` and the `☰` button hide the list, which
+gives a side-by-side diff the width back. The URL's `#n` records which commit
+is open, so a reload comes back to it.
+
+Each commit is its own page, with its own comments and its own `Copy review`
+pill, and that pill copies the same prompt a commit link in `md-viewer` does,
+naming the commit by its full sha. A count beside each commit in the list says
+how many comments it has so far. `Copy all reviews` in the header gathers
+every commit's comments into one prompt, under a heading per commit:
+
+~~~
+Please address these review comments on the following commits:
+
+## commit 8d10d1bb756e… (un-skip the a11y test on mac)
+
+- browser/base/content/test/a11y/browser.toml:12 — "skip-if"
+
+  ```diff
+  ...
+  ```
+
+  is this still needed on 14.x?
+~~~
+
+Only commits with comments are listed, so a commit that was fine leaves no
+trace in the review.
+
+The commits are read from the repository's git store with `git show`, since jj
+keeps every commit there, the snapshotted working copy included. The listing
+itself comes from `jj log`, which snapshots the working copy first, so a stack
+that ends at `@` shows what is on disk now. As with `diff-viewer`, the page is
+self-contained and the command exits shortly after the browser has loaded it.
+The commits' pages are carried inside it and parsed the first time each one is
+opened, so a long stack appears as quickly as a short one.
 
 ## How md-viewer works
 

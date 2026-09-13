@@ -2,11 +2,12 @@
   "name": "md-viewer",
   "version": "1.0.0",
   "private": true,
-  "description": "Preview a Markdown file or review a diff in a browser tab.",
+  "description": "Preview a Markdown file, or review a diff or a stack of commits, in a browser tab.",
   "type": "module",
   "bin": {
     "md-viewer": "./md-viewer.js",
-    "diff-viewer": "./diff-viewer.js"
+    "diff-viewer": "./diff-viewer.js",
+    "stack-viewer": "./stack-viewer.js"
   },
   "scripts": {
     "test": "node --test",

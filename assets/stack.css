@@ -1,0 +1,255 @@
+/* stack-viewer — the frame around a stack of commits: a header, a list of the
+   commits down the left, and the pane the chosen commit's own page fills.
+   Colours and the light/dark switch come from style.css, served with this. */
+
+:root {
+  --sv-list-width: 22rem;
+}
+
+/* The page is a viewport, not a document: the commit's own page scrolls
+   inside its frame, and nothing out here should. */
+.sv-body {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sv-root {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  grid-template-columns: var(--sv-list-width) 1fr;
+  height: 100%;
+}
+
+.sv-root.sv-list-hidden {
+  grid-template-columns: 0 1fr;
+}
+
+/* The list is taken out of the layout rather than made narrow, so that a long
+   subject cannot keep the column from reaching zero. Both it and the pane name
+   their column, because auto-placement would otherwise put the pane in the
+   column the list left empty, and the pane would be the width the hidden list
+   was told to be: nothing. */
+.sv-root.sv-list-hidden .sv-list {
+  display: none;
+}
+
+/* Header */
+
+.sv-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-height: 2.6rem;
+  padding: 0.35rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-size: 0.85rem;
+}
+
+.sv-list-toggle {
+  padding: 0.1rem 0.45rem;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.4;
+  color: var(--fg-muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sv-list-toggle:hover {
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+.sv-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.sv-title-where {
+  color: var(--fg-muted);
+  opacity: 0.8;
+}
+
+.sv-count {
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* The review across the stack, in the header rather than a corner: each
+   commit's page has its own pill in its corner, and a second pill floating
+   over it would be read as that one's. */
+.sv-review {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.sv-review[hidden] {
+  display: none;
+}
+
+.sv-review-copy {
+  padding: 0.2rem 0.7rem;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--bg);
+  background: var(--fg);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.sv-review-copy:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* The list */
+
+.sv-list {
+  grid-column: 1;
+  grid-row: 2;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.sv-list ol {
+  margin: 0;
+  padding: 0.4rem 0;
+  list-style: none;
+}
+
+.sv-entry {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr auto;
+  grid-template-areas:
+    "n id comments"
+    "n subject subject"
+    "n stats stats";
+  column-gap: 0.4rem;
+  width: 100%;
+  padding: 0.45rem 0.7rem 0.45rem 0.5rem;
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  text-align: left;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+
+.sv-entry:hover {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+
+/* The commit being read. A white row against the list's grey was too quiet to
+   find at a glance, so it is tinted, bordered and set in bold: the reader
+   comes back to the list to see where they are before they see anything else. */
+.sv-entry[aria-current='true'] {
+  background: color-mix(in srgb, var(--link) 20%, var(--bg));
+  border-left-color: var(--link);
+}
+
+.sv-entry[aria-current='true'] .sv-entry-id,
+.sv-entry[aria-current='true'] .sv-entry-n {
+  color: var(--link);
+}
+
+.sv-entry-n {
+  grid-area: n;
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  text-align: right;
+  padding-top: 0.15em;
+}
+
+.sv-entry-id {
+  grid-area: id;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+}
+
+.sv-entry-subject {
+  grid-area: subject;
+  overflow-wrap: anywhere;
+}
+
+.sv-entry-stats {
+  grid-area: stats;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.sv-entry-stat {
+  margin-right: 0.5em;
+}
+
+.sv-entry-empty {
+  color: var(--fg-muted);
+}
+
+.dv-stat-add {
+  color: var(--accent);
+}
+
+.dv-stat-del {
+  color: var(--danger);
+}
+
+/* How many comments this commit has so far, once it has any. */
+.sv-entry-comments {
+  grid-area: comments;
+  padding: 0 0.45em;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: #5c4400;
+  background: color-mix(in srgb, #f5c518 55%, transparent);
+  border-radius: 999px;
+}
+
+.sv-entry-comments[hidden] {
+  display: none;
+}
+
+/* The pane */
+
+.sv-pane {
+  grid-column: 2;
+  grid-row: 2;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Every frame that has been opened stays laid out at the pane's full size, and
+   only the current one is visible. Hidden rather than removed from layout, so
+   a frame's own script reads a real width when it decides between one column
+   and two, and so its scroll position and the comment box it may have open
+   survive the reader looking at another commit. */
+.sv-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg);
+  visibility: hidden;
+}
+
+.sv-frame.sv-frame-current {
+  visibility: visible;
+}

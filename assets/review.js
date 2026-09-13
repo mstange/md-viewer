@@ -546,6 +546,11 @@
     var total = comments.length;
     bar.hidden = total === 0;
     count.textContent = total + (total === 1 ? ' comment' : ' comments');
+    // A page that embeds this one — stack-viewer shows one of these per commit
+    // — keeps a count of its own beside each, and this is how it hears of a
+    // change. The count is on the event rather than read out of the bar, so
+    // the bar's wording is nobody's interface.
+    document.dispatchEvent(new CustomEvent('mdv-review-change', { detail: { count: total } }));
   }
 
   /**
@@ -731,4 +736,15 @@
   // The article element survives a reload but its contents do not, so the
   // highlights have to be put back each time.
   window.mdvReviewReattach = reattach;
+
+  /**
+   * The comments so far, for a page that embeds this one and copies several
+   * reviews out at once. Asking saves whatever is being written first, as the
+   * copy button does: the click that asks lands in the embedding page, so this
+   * document's own listener never sees it.
+   */
+  window.mdvReviewComments = function () {
+    commitBox();
+    return comments.slice();
+  };
 })();
