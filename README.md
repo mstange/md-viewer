@@ -56,6 +56,7 @@ Environment variables:
 | `MD_VIEWER_BINDIR`   | Install directory used by `install.sh`.       |
 | `BROWSER`            | Command used to open the URL.                 |
 | `MD_VIEWER_DEBUG`    | Log why and when the server decides to exit.  |
+| `MD_VIEWER_BUG_URL`  | Where a bug named in a commit message links, with `{id}` for the number. |
 | `DIFF_VIEWER_PORT`   | Default port for `diff-viewer`.               |
 | `MD_VIEWER_REMOTE_CMD` | Path to `md-viewer` on the remote host.     |
 
@@ -137,6 +138,11 @@ patch reviewable. It is ordinary content of the page, so a passage of it can be
 commented on like any line of code — a claim in a message can be wrong when
 every line of the diff is right. Such a comment names the message rather than a
 file, and is quoted as prose rather than as a patch.
+
+A bug named in the message, as in `Bug 1951421 - Hold the decision`, is a
+link to that bug on Mozilla's Bugzilla, opened in a new tab. Set
+`MD_VIEWER_BUG_URL` to point somewhere else, with `{id}` standing for the
+number: `https://bugs.webkit.org/show_bug.cgi?id={id}`.
 
 ## File links
 
