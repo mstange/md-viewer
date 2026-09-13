@@ -450,3 +450,21 @@ test('the focus moves before the paste, so the pasted text is the comment', asyn
   d.querySelector('.mdv-review-copy').click();
   assert.match(copied, /pasted words/);
 });
+
+test('a comment across a bug link in the message quotes the text as written', async () => {
+  const shown =
+    'commit 0123456789abcdef0123456789abcdef01234567\nAuthor: A <a@example.invalid>\n\n' +
+    '    Bug 1951421 - Hold the decision as one value\n\n' +
+    PATCH;
+  const p = await page(shown);
+  // The first line of the page is the subject, which the link splits into
+  // three text nodes; the reader drags across all of them.
+  assert.equal(p.line(0).closest('.dv-line').dataset.side, 'msg');
+  assert.ok(p.line(0).querySelector('a.dv-bug'), 'the bug is a link');
+  await p.select(0, 0);
+  p.comment('is this the right bug?');
+
+  const prompt = p.prompt();
+  assert.match(prompt, /- the commit message, line 1 — "Bug 1951421 - Hold the decision as one value"/);
+  assert.match(prompt, /\n  Bug 1951421 - Hold the decision as one value\n/, 'quoted as prose, once');
+});

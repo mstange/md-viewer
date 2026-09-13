@@ -290,6 +290,17 @@
   min-height: 1.5em;
 }
 
+/* A bug named in the message. The message is prose in the body font, so the
+   link is styled as a link in prose, not as a highlighted token. */
+.dv-line-msg a.dv-bug {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.dv-line-msg a.dv-bug:hover {
+  text-decoration: underline;
+}
+
 /* Author and date, on the message's header rather than in the toolbar: they
    belong to the commit being read, not to the page. */
 .dv-msg-header {

@@ -323,6 +323,30 @@ test('a message that mentions a diff marker does not end the message early', () 
   assert.match(rest, /^diff --git/);
 });
 
+test('a bug named in the message is a link to it, and a small number is not', () => {
+  const source = SHOWN.replace(
+    '    The subject line',
+    '    Bug 1951421 - Hold the decision. See also bug 1234567 and bug 42, r=a&b',
+  );
+  const rendered = renderDiff(source);
+  const line = /<span class="dv-text">(.*?)<\/span>/.exec(rendered.html)[1];
+  assert.equal(
+    line,
+    '<a class="dv-bug" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1951421" ' +
+      'target="_blank" rel="noopener">Bug 1951421</a> - Hold the decision. See also ' +
+      '<a class="dv-bug" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1234567" ' +
+      'target="_blank" rel="noopener">bug 1234567</a> and bug 42, r=a&amp;b',
+  );
+  // The text a comment quotes is what was written, links or not.
+  assert.equal(
+    line.replace(/<[^>]+>/g, ''),
+    'Bug 1951421 - Hold the decision. See also bug 1234567 and bug 42, r=a&amp;b',
+  );
+  // A bug number in the code itself is left alone: only the message links.
+  const inCode = renderDiff(patch('-Bug 1951421 fixed here\n+see bug 1951421'));
+  assert.ok(!inCode.html.includes('dv-bug'));
+});
+
 test('the message is rendered as commentable lines above the files', () => {
   const rendered = renderDiff(SHOWN);
   assert.match(rendered.html, /class="dv-file dv-message"/);
