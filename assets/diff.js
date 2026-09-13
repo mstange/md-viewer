@@ -109,51 +109,23 @@
   }
 
   /**
-   * A file's lines in the order the patch has them.
-   *
-   * The page pairs each deletion with the insertion that replaced it, so that
-   * side by side can draw the two on one line; in the markup they then
-   * alternate. A patch does not alternate — it gives a run of deletions and
-   * then the run of insertions that replaced them — and a quote that reads
-   * `-old +new -old +new` is not a diff anyone or anything can apply. So each
-   * run of changed lines is put back in the order it was in, which unchanged
-   * lines break.
+   * A file's lines in the order the patch has them, which is the order the
+   * markup keeps: a run of changes is its deletions and then its insertions.
+   * The mirrored copy of an unchanged line is the same line drawn again in the
+   * other column, not a line of the diff, so it is left out of the quote.
    */
   function patchOrder(table) {
-    // The mirrored copy of an unchanged line is the same line drawn again in
-    // the other column, not a line of the diff, so it is left out of the quote.
-    var lines = table.querySelectorAll('.dv-line:not(.dv-line-mirror)');
-    var out = [];
-    var dels = [];
-    var adds = [];
-    var flush = function () {
-      out = out.concat(dels, adds);
-      dels = [];
-      adds = [];
-    };
-
-    for (var i = 0; i < lines.length; i++) {
-      var side = lines[i].dataset.side;
-      if (side === 'del') {
-        dels.push(lines[i]);
-      } else if (side === 'add') {
-        adds.push(lines[i]);
-      } else {
-        flush();
-        out.push(lines[i]);
-      }
-    }
-    flush();
-    return out;
+    return Array.prototype.slice.call(table.querySelectorAll('.dv-line:not(.dv-line-mirror)'));
   }
 
   /**
    * The half of the diff a comment written at this node belongs to.
    *
-   * Side by side draws two versions of a file in two columns, but a changed
-   * line puts its deletion and its insertion next to each other in the markup,
-   * so a range dragged down one column runs through the other on the way. A
-   * comment means the column it was drawn in, and this is what says so.
+   * Side by side draws two versions of a file in two columns, but the markup
+   * holds a run's deletions and then its insertions, so a range dragged down
+   * one column from one run into the next runs through the other column's
+   * lines on the way. A comment means the column it was drawn in, and this is
+   * what says so.
    *
    * Unified has one column, and there is nothing to separate: every line of it
    * is text the reader is reading, in the order they read it.
