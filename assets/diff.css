@@ -138,6 +138,11 @@
   font-family: var(--mono);
   font-size: 0.8125rem;
   line-height: 1.5;
+  /* A line-number gutter wide enough for the file's widest number, which the
+     renderer counts into --dv-digits. `ch` is a digit of the table's font,
+     which is a little larger than the gutter's own, so it fits with room; the
+     rest is the gutter's padding. */
+  --dv-gutter: calc(var(--dv-digits, 4) * 1ch + 1.2em);
 }
 
 .dv-line {
@@ -155,6 +160,8 @@
   font-size: 0.75rem;
   /* The gutter runs the height of a wrapped line, not just its first row. */
   align-self: stretch;
+  /* A number is one token; the column is sized so it never has to fold. */
+  white-space: nowrap;
 }
 
 .dv-marker {
@@ -242,7 +249,7 @@
 /* Unified: every line in one column, behind both gutters. */
 
 .dv-unified .dv-line {
-  grid-template-columns: 3.4em 3.4em 1.4em 1fr;
+  grid-template-columns: var(--dv-gutter) var(--dv-gutter) 1.4em 1fr;
 }
 
 /* The commit message.
@@ -309,7 +316,7 @@
 }
 
 .dv-split .dv-line {
-  grid-template-columns: 3.4em 1.4em 1fr;
+  grid-template-columns: var(--dv-gutter) 1.4em 1fr;
 }
 
 /* A changed line shows only the gutter of the file it belongs to. Hiding the
