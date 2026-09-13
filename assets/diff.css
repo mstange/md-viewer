@@ -210,22 +210,11 @@
 }
 
 /* Whitespace-only changes: the point of the line is what you cannot see, so
-   the changed runs spell their spaces out and the line says why it is here. */
+   the changed runs spell their spaces out. */
 .dv-line-space .dv-word {
   background: var(--dv-space-bg);
   outline: 1px solid var(--dv-space);
   color: var(--dv-space);
-}
-
-.dv-line-space .dv-text::after {
-  content: "whitespace";
-  float: right;
-  margin-left: 1em;
-  color: var(--dv-space);
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  opacity: 0.85;
 }
 
 .dv-row-hunk {
