@@ -227,6 +227,65 @@ test('a jj revset lists its commits oldest first, labelled by change id', { skip
   assert.match(source, /^-one\n\+two$/m);
 });
 
+test('with no revset the applied jj stack is reviewed', { skip: !haveJj() }, async () => {
+  const { dir, changes, jj } = scratchJjRepo();
+  const stack = await openStack(findStackRepository(dir));
+  const { revset, title, base } = await stack.defaultStack();
+  assert.equal(title, 'current stack');
+  assert.equal(base, 'trunk()');
+
+  assert.deepEqual(
+    (await stack.list(revset)).map((c) => c.label),
+    changes,
+    'the empty commit jj new leaves on top is not a patch anybody wrote',
+  );
+
+  // Once there is something in the working copy it is part of the stack, the
+  // same way `jj diff` shows it.
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'four\n');
+  const working = await stack.list(revset);
+  assert.equal(working.length, changes.length + 1, 'a working copy with changes in it is a patch');
+
+  // And editing a change in the middle still reviews the whole stack, which
+  // is what the tool is for — `trunk()..@` would stop at the edited change.
+  jj('edit', '-r', changes[1]);
+  assert.deepEqual(
+    (await stack.list(revset)).map((c) => c.label).slice(0, 3),
+    changes,
+    'the changes above the edited one are still in the stack',
+  );
+});
+
+test('with no revset a git stack starts at the branch it tracks', async () => {
+  const { dir, shas, git } = scratchGitRepo();
+  const stack = await openStack({ root: dir, kind: 'git' });
+
+  // On the trunk branch itself, with nothing on top of it.
+  const onMain = await stack.defaultStack();
+  assert.deepEqual(onMain, { revset: 'main..HEAD', title: 'main..HEAD', base: 'main' });
+  assert.deepEqual(await stack.list(onMain.revset), []);
+
+  git('checkout', '-q', '-b', 'feature', shas[1]);
+  fs.writeFileSync(path.join(dir, 'b.txt'), 'work\n');
+  git('add', 'b.txt');
+  git('commit', '-qm', 'the one patch');
+  git('branch', '--set-upstream-to=main', 'feature');
+
+  const onFeature = await stack.defaultStack();
+  assert.equal(
+    onFeature.base,
+    'main',
+    'the upstream is named by the branch it points at, not @{upstream}',
+  );
+  const commits = await stack.list(onFeature.revset);
+  assert.deepEqual(
+    commits.map((c) => c.sha),
+    [git('rev-parse', 'HEAD').trim()],
+    'only the commits this branch adds to its upstream',
+  );
+});
+
+
 // ---------------------------------------------------------------------------
 // The page
 // ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@ back to an agent, and `stack-viewer` does the same for a series of commits:
 
 ```
 git diff | diff-viewer
-stack-viewer main..HEAD
+stack-viewer          # the stack you have applied right now
 ```
 
 ## Install
@@ -300,6 +300,7 @@ in a jj repository, and names the stack the way that tool does — a git range,
 or a jj revset:
 
 ```
+stack-viewer                     # the stack you have applied right now
 stack-viewer main..HEAD          # the commits on top of main
 stack-viewer HEAD                # just one commit
 stack-viewer lqs::tvz            # a jj revset
@@ -311,8 +312,20 @@ if it is both a jj and a git repository, as a colocated one is, the argument is
 read as a revset. The patches themselves are always read with `git show`, out
 of the git store jj keeps as well, so the two render identically.
 
+With no argument it reviews the stack that is applied right now. In jj that is
+everything from `trunk()` up to the tip of the stack `@` is in — `trunk()` is
+jj's own name for the branch the work is going onto, so a repository that does
+not call it `main` needs no extra flag here. The empty undescribed commit that
+`jj new` leaves on top is dropped, since nobody wrote it; a working copy with
+changes in it is kept, since `jj diff` would show it. Working on a commit in
+the middle of a stack still reviews the whole stack: the tip is the newest head
+growing out of `@`, so a change that has been branched off twice reviews the
+branch that moved last. In a plain git checkout the stack is what the current
+branch adds to the branch it tracks, or failing that to `origin/main`,
+`origin/master`, `main` or `master`.
+
 ```
-stack-viewer [options] <revset>
+stack-viewer [options] [revset]
 
   -R, --repo <dir>  The repository to read from. Defaults to the one around
                     the current directory.

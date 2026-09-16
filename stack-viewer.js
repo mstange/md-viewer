@@ -2,6 +2,7 @@
 /**
  * stack-viewer — review a stack of commits in one browser tab.
  *
+ *   stack-viewer
  *   stack-viewer lqs::tvz
  *   stack-viewer -R ~/src/firefox 'trunk()..@'
  *
@@ -27,7 +28,7 @@ const VERSION = JSON.parse(fs.readFileSync(path.join(HERE, 'package.json'), 'utf
 
 const USAGE = `stack-viewer ${VERSION} — review a stack of commits in your browser
 
-Usage: stack-viewer [options] <revset>
+Usage: stack-viewer [options] [revset]
 
 Options:
   -R, --repo <dir>  The repository to read from. Defaults to the one around
@@ -41,7 +42,9 @@ Options:
   -v, --version     Show the version.
 
 In a jj repository the argument is a revset, such as lqs::tvz or 'trunk()..@'.
-In a git repository it is a range, such as main..HEAD, or one commit. The
+In a git repository it is a range, such as main..HEAD, or one commit. With no
+argument it is the stack that is applied now: everything from trunk() up to
+the tip of the stack @ is in, less the empty commit jj new leaves on top. The
 commits are shown oldest first, each with its own review comments. Exits
 shortly after the page is loaded — the tab stays usable, since the comments
 live in the page.`;
@@ -117,9 +120,6 @@ function parseArgs(argv) {
         takeRevset(options, arg);
     }
   }
-  if (!options.revset) {
-    fail(`no revset given\n\n${USAGE}`);
-  }
   return options;
 }
 
@@ -172,14 +172,21 @@ async function main() {
 
   let stack;
   let commits;
+  // With no revset the stack to review is the one that is applied, which only
+  // the repository can say; its own name for it is what the page is titled.
+  let title = options.revset;
+  let base = null;
   try {
     stack = await openStack(found);
+    if (!options.revset) {
+      ({ revset: options.revset, title, base } = await stack.defaultStack());
+    }
     commits = await stack.list(options.revset);
   } catch (error) {
     fail(error.message);
   }
   if (!commits.length) {
-    fail(`no commits match ${options.revset}`);
+    fail(base ? `nothing is applied on top of ${base}` : `no commits match ${options.revset}`);
   }
   if (commits.length > options.maxCommits) {
     fail(await tooLong(stack, options, commits.length));
@@ -192,7 +199,7 @@ async function main() {
     fail(`cannot read the commits: ${error.message}`);
   }
 
-  const document = await buildStackPage(patches, { title: options.revset, where: stack.root });
+  const document = await buildStackPage(patches, { title, where: stack.root });
   if (options.output) {
     await writeStandalone(document, { ...options, tool: 'stack-viewer' });
   } else {
