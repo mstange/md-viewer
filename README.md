@@ -15,7 +15,7 @@ back to an agent, and `stack-viewer` does the same for a series of commits:
 
 ```
 git diff | diff-viewer
-stack-viewer lqs::tvz
+stack-viewer main..HEAD
 ```
 
 ## Install
@@ -295,17 +295,21 @@ them out needs nothing from the process that served them.
 ## Reviewing a stack of commits
 
 `stack-viewer` shows a series of commits in one tab, each as the review page
-`diff-viewer` would show for that commit alone. It names the stack the way jj
-does, by revset:
+`diff-viewer` would show for that commit alone. It works in a git checkout and
+in a jj repository, and names the stack the way that tool does — a git range,
+or a jj revset:
 
 ```
-stack-viewer lqs::tvz
+stack-viewer main..HEAD          # the commits on top of main
+stack-viewer HEAD                # just one commit
+stack-viewer lqs::tvz            # a jj revset
 stack-viewer -R ~/src/firefox 'trunk()..@'
 ```
 
-The repository is the jj repository around the current directory, or the one
-`-R` names. In a plain git checkout the argument is a git range such as
-`main..HEAD`, or a single commit.
+The repository is the one around the current directory, or the one `-R` names;
+if it is both a jj and a git repository, as a colocated one is, the argument is
+read as a revset. The patches themselves are always read with `git show`, out
+of the git store jj keeps as well, so the two render identically.
 
 ```
 stack-viewer [options] <revset>
