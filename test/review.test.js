@@ -42,6 +42,24 @@ const PATCH = `diff --git a/browser_dbg-backgroundtask-debugging.js b/browser_db
 `;
 
 /**
+ * The same change as `git show` prints it: the message, indented, above the
+ * patch. Its last paragraph is two lines, with a blank line before them.
+ */
+const COMMIT = `commit e4e5d3ab4fc080e1dd469d9972b566224c4df19c
+Author: A Reviewer <nobody@example.com>
+Date:   Tue Sep 16 12:00:00 2026 +0200
+
+    Extract the byte-range hierarchy into ProfileBuilder and Region.
+
+    Together these drop all three #[allow(clippy::too_many_arguments)]:
+    emit_sample_for_address went from 13 parameters to 6.
+
+    No change in output: both a thin and a fat test binary produce byte-identical
+    profiles before and after.
+
+${PATCH}`;
+
+/**
  * The page, loaded and scripted, with the helpers a test needs to act on it.
  *
  * jsdom has no layout and no user, so the two things a reader does are done
@@ -60,10 +78,29 @@ async function page(source = PATCH) {
       '.dv-text'
     );
 
+  /** The text cell of the nth line of the commit message, counting from 1. */
+  const msgLine = (n) =>
+    document.querySelectorAll('.dv-msg-table .dv-line')[n - 1].querySelector('.dv-text');
+
   /** The line holding this text, as the page's own markers say it. */
   const marker = (n) => {
     const side = line(n).closest('.dv-line').dataset.side;
     return side === 'add' ? '+' : side === 'del' ? '-' : ' ';
+  };
+
+  /**
+   * Select what a Range covers, and wait for the page to act on it. A drag does
+   * not always land on the text it covers, and those endpoints are the whole
+   * point of some of these cases, so they can be given directly.
+   */
+  const selectRange = (range) => {
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new window.Event('selectionchange'));
+    document.dispatchEvent(new window.Event('mouseup', { bubbles: true }));
+    // Selections have to hold still before the comment box opens.
+    return new Promise((resolve) => window.setTimeout(resolve, 400));
   };
 
   /** Every text node under an element, in order, since a line is marked up. */
@@ -79,12 +116,14 @@ async function page(source = PATCH) {
     window,
     document,
     line,
+    msgLine,
     marker,
     split() {
       const toggle = document.getElementById('dv-layout');
       toggle.checked = true;
       toggle.dispatchEvent(new window.Event('change'));
     },
+    selectRange,
     /** Drag from the start of line `from` to the end of line `to`. */
     select(from, to) {
       const first = texts(line(from))[0];
@@ -93,13 +132,7 @@ async function page(source = PATCH) {
       const range = document.createRange();
       range.setStart(first, 0);
       range.setEnd(last, last.textContent.length);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-      document.dispatchEvent(new window.Event('selectionchange'));
-      document.dispatchEvent(new window.Event('mouseup', { bubbles: true }));
-      // Selections have to hold still before the comment box opens.
-      return new Promise((resolve) => window.setTimeout(resolve, 400));
+      return selectRange(range);
     },
     /** Write a comment on the pending selection and save it, as Enter does. */
     comment(text) {
@@ -228,6 +261,33 @@ test('unified reads every line, since it has only one column', async () => {
   const quoted = prompt.split('```diff')[1].split('```')[0];
   assert.match(quoted, /Before we start the background task/);
   assert.match(quoted, /writes off the main thread/);
+});
+
+test('a comment on the message covers the lines it has text from, not the blank line above', async () => {
+  const p = await page(COMMIT);
+  // A drag down the last paragraph of the message, released at the end of it.
+  // The browser puts the start of such a selection on the blank line above,
+  // which has no text of its own: the reader means the two lines below it.
+  const document = p.document;
+  const last = p.msgLine(7).firstChild;
+  const range = document.createRange();
+  range.setStart(p.msgLine(5), 0);
+  range.setEnd(last, last.textContent.length);
+  await p.selectRange(range);
+  p.comment("no need to spell this out, it's expected");
+
+  const prompt = p.prompt();
+  const header = prompt.split('\n').find((line) => line.startsWith('- '));
+  assert.match(header, /the commit message, line 6 —/);
+  assert.match(header, /2 lines from "No change in output: both a thin/);
+  assert.doesNotMatch(header, /from ""/, 'the blank line above is not what it is quoting');
+
+  // Two lines of context, as everywhere else — so the paragraph before it is
+  // out of the quote, one line of it and the blank line between being all the
+  // context two lines allows.
+  const quoted = prompt.split('```')[1];
+  assert.match(quoted, /emit_sample_for_address went from 13 parameters to 6\./);
+  assert.doesNotMatch(quoted, /Together these drop/);
 });
 
 /** Select the whole of one paragraph, the way dragging across it does. */

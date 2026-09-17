@@ -137,6 +137,43 @@
   }
 
   /**
+   * The range, with its endpoints moved onto the text it covers.
+   *
+   * A selection's own endpoints need not sit on any of the text it selects. A
+   * drag released at the start of a line ends on the row above it, and one
+   * begun from the left of a line can start on the blank line above, which has
+   * no text in it at all. Everything a comment records is read off those
+   * endpoints — which column it was written in, its line, and the lines it is
+   * reported to cover — so a comment on the last two lines of a commit message
+   * came back as three lines quoted from "".
+   *
+   * Asides are skipped here as they are everywhere else, so an endpoint lands
+   * on text the reader was reading and not on a gutter's line number.
+   */
+  function tighten(range) {
+    var first = null;
+    var last = null;
+    walkText(walkRoot(range), function (node) {
+      if (!range.intersectsNode(node)) return false;
+      var from = node === range.startContainer ? range.startOffset : 0;
+      var to = node === range.endContainer ? range.endOffset : node.textContent.length;
+      var text = node.textContent.slice(from, to);
+      var lead = text.search(/\S/);
+      // A line the selection only reaches the whitespace of is not a line it
+      // is about, so the endpoints pass it by.
+      if (lead === -1) return false;
+      if (!first) first = { node: node, offset: from + lead };
+      last = { node: node, offset: from + text.replace(/\s+$/, '').length };
+      return false;
+    });
+    if (!first) return range;
+    var tightened = document.createRange();
+    tightened.setStart(first.node, first.offset);
+    tightened.setEnd(last.node, last.offset);
+    return tightened;
+  }
+
+  /**
    * An element to walk a range from. A TreeWalker never visits its own root, so
    * a range that sits inside one text node — the usual case for a selection
    * within a paragraph — has to be walked from that node's parent.
@@ -614,7 +651,11 @@
     // pointed into, so take the selection again before trusting it.
     selection = window.getSelection();
     if (!selection.rangeCount || !selection.toString().trim()) return;
-    range = selection.getRangeAt(0);
+    // Tightened before anything is read off it. The line a comment reports and
+    // the lines it covers are read off the endpoints, and the column it means
+    // is read off where it starts, so all three want endpoints that are on the
+    // text: a drag begun on the blank line above says nothing about any of it.
+    range = tighten(selection.getRangeAt(0));
     scope = scopeOf(range.startContainer);
     text = rangeText(range, testOf(scope)).trim();
     if (!text) return;
