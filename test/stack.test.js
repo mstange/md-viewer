@@ -18,8 +18,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { JSDOM } from 'jsdom';
-import { findStackRepository, openStack, readStack } from '../lib/stack.js';
+import { fileURLToPath } from 'node:url';
+import { MAX_STACK_COMMITS, findStackRepository, openStack, readStack } from '../lib/stack.js';
 import { buildStackPage, jsonForScript } from '../lib/stack-page.js';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const AUTHOR = {
   GIT_AUTHOR_NAME: 'T',
@@ -130,6 +133,75 @@ test('reading a stack keeps its order however the reads finish', async () => {
   for (const [i, patch] of patches.entries()) {
     assert.match(patch.source, new RegExp(`^commit ${shas[i + 1]}`), `patch ${i} is its own commit`);
   }
+});
+
+/**
+ * A stack too long to build has to be refused before it is read, not after.
+ *
+ * `main..HEAD` against a base branch that has not been pulled in months names
+ * every commit since — thousands in a large repository — and building those
+ * ran the heap out and dumped core after a minute. The count is known from one
+ * `rev-list`, so the answer is available immediately and costs nothing.
+ */
+test('a stack longer than the limit is refused before a single patch is read', () => {
+  const { dir, shas } = scratchGitRepo();
+  // `show` throws: nothing may reach it, since the refusal comes first.
+  const run = (...args) =>
+    execFileSync(process.execPath, [path.join(HERE, '..', 'stack-viewer.js'), '--no-open', '-R', dir, ...args], {
+      encoding: 'utf8',
+      env: { ...process.env, ...AUTHOR },
+    });
+
+  let failure;
+  try {
+    run('--max-commits', '2', `${shas[0]}..${shas[3]}`);
+  } catch (error) {
+    failure = error;
+  }
+  assert.ok(failure, 'a stack over the limit is an error');
+  assert.equal(failure.status, 1);
+  assert.match(failure.stderr, /names 3 commits, and stack-viewer builds at most 2/);
+  assert.match(failure.stderr, /--max-commits 3 to build it anyway/, 'the way through is offered');
+
+  // And the same stack under the limit is built, so the limit is all that
+  // stopped it.
+  const out = path.join(dir, 'page.html');
+  run('--max-commits', '3', '-o', out, `${shas[0]}..${shas[3]}`);
+  assert.match(fs.readFileSync(out, 'utf8'), /sv-entry/);
+});
+
+test('the base of a stale range is reported as the branch it tracks', async () => {
+  const { dir, git } = scratchGitRepo();
+  const stack = await openStack({ root: dir, kind: 'git' });
+  assert.equal(await stack.upstreamOf('main'), null, 'a branch tracking nothing has no advice');
+
+  // A remote to track, made by cloning this repository and pointing back.
+  const remote = fs.mkdtempSync(path.join(os.tmpdir(), 'mdv-stack-remote-'));
+  execFileSync('git', ['clone', '-q', '--bare', dir, path.join(remote, 'origin.git')]);
+  git('remote', 'add', 'origin', path.join(remote, 'origin.git'));
+  git('fetch', '-q', 'origin');
+  git('branch', '--set-upstream-to=origin/main', 'main');
+  assert.equal(await stack.upstreamOf('main'), 'origin/main');
+
+  assert.equal(await stack.upstreamOf('no-such-branch'), null, 'a name that resolves to nothing');
+});
+
+test('a stack whose patches are too large to carry stops while it can say so', async () => {
+  const { dir, shas } = scratchGitRepo();
+  const stack = await openStack({ root: dir, kind: 'git' });
+  const commits = await stack.list(`${shas[0]}..${shas[3]}`);
+
+  // A budget under one patch: the first read is already past it, so the stack
+  // stops on the commit that broke it rather than on the last.
+  await assert.rejects(readStack(stack, commits, { maxBytes: 1 }), /more than one page can carry/);
+
+  // The same stack with the real budget is read whole.
+  const patches = await readStack(stack, commits);
+  assert.equal(patches.length, 3);
+});
+
+test('the default limit is a stack somebody might actually review', () => {
+  assert.ok(MAX_STACK_COMMITS >= 35, 'a real stack of 35 commits has to fit');
 });
 
 test('a jj revset lists its commits oldest first, labelled by change id', { skip: !haveJj() }, async () => {

@@ -319,8 +319,27 @@ stack-viewer [options] <revset>
   -o, --output <f>  Write a standalone HTML file instead of serving it.
   -p, --port <n>    Listen on this port instead of a random free one.
       --no-open     Print the URL instead of launching a browser.
+      --max-commits <n>
+                    Build at most this many commits (default 100).
   -h, --help        Show help.
   -v, --version     Show the version.
+```
+
+Every commit becomes a review page carried inside the one tab, so a stack has
+to be a length somebody would read: past `--max-commits` it is refused, before
+any of it is read. A range that comes back thousands of commits long is nearly
+always one whose base is stale -- `main..HEAD` where `main` has not been pulled
+-- and the error says so, naming the branch `main` tracks:
+
+```
+$ stack-viewer main..HEAD
+stack-viewer: main..HEAD names 4953 commits, and stack-viewer builds at most
+100: each one becomes a review page inside the one tab.
+
+A range this long usually means main is behind what it tracks. Try
+origin/main..HEAD
+
+Or pass --max-commits 4953 to build it anyway.
 ```
 
 A list down the left names the commits oldest first, by change id and subject,

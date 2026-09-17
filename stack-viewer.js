@@ -18,7 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findStackRepository, openStack, readStack } from './lib/stack.js';
+import { MAX_STACK_COMMITS, findStackRepository, openStack, readStack } from './lib/stack.js';
 import { buildStackPage } from './lib/stack-page.js';
 import { serveOnce, writeStandalone } from './lib/serve-once.js';
 
@@ -35,6 +35,8 @@ Options:
   -o, --output <f>  Write a standalone HTML file instead of serving it.
   -p, --port <n>    Listen on this port instead of a random free one.
       --no-open     Print the URL instead of launching a browser.
+      --max-commits <n>
+                    Build at most this many commits (default ${MAX_STACK_COMMITS}).
   -h, --help        Show this help.
   -v, --version     Show the version.
 
@@ -55,6 +57,7 @@ function parseArgs(argv) {
     output: null,
     port: Number(process.env.STACK_VIEWER_PORT) || 0,
     open: true,
+    maxCommits: MAX_STACK_COMMITS,
   };
 
   let literal = false;
@@ -92,6 +95,12 @@ function parseArgs(argv) {
         options.output = argv[++i];
         if (!options.output) fail('--output needs a file name');
         break;
+      case '--max-commits':
+        options.maxCommits = Number(argv[++i]);
+        if (!Number.isInteger(options.maxCommits) || options.maxCommits < 1) {
+          fail(`--max-commits needs a count: ${argv[i]}`);
+        }
+        break;
       case '-p':
       case '--port':
         options.port = Number(argv[++i]);
@@ -128,6 +137,31 @@ function fail(message) {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Why a stack is not being built, and what to do about it.
+ *
+ * A range thousands of commits long is almost never what was meant -- it is
+ * `main..HEAD` where `main` is months behind -- so the base's upstream is
+ * offered, since that is the range the reader was reaching for. The limit can
+ * be lifted for anyone who really did mean it, with the count already filled
+ * in: the answer to "how many" is the number they just saw.
+ */
+async function tooLong(stack, options, count) {
+  let message =
+    `${options.revset} names ${count} commits, and stack-viewer builds at most ` +
+    `${options.maxCommits}: each one becomes a review page inside the one tab.`;
+
+  // Only a range has a base that can be stale; `a..b` and `a...b` both do.
+  const base = /^([^.]\S*?)\.\.\.?\S*$/.exec(options.revset)?.[1];
+  const upstream = base ? await stack.upstreamOf(base) : null;
+  if (upstream) {
+    message +=
+      `\n\nA range this long usually means ${base} is behind what it tracks. ` +
+      `Try ${options.revset.replace(base, upstream)}`;
+  }
+  return `${message}\n\nOr pass --max-commits ${count} to build it anyway.`;
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
 
@@ -146,6 +180,9 @@ async function main() {
   }
   if (!commits.length) {
     fail(`no commits match ${options.revset}`);
+  }
+  if (commits.length > options.maxCommits) {
+    fail(await tooLong(stack, options, commits.length));
   }
 
   let patches;
